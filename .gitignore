@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+.next/
+out/
+frontend/.env.local
+.npm/
+
+# Models (downloaded at runtime / docker build)
+backend/weights/*.onnx
+backend/weights/*.bin
+backend/weights/*.pt
+!backend/weights/.gitkeep
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Docker
+*.log
