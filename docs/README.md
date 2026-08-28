@@ -1,6 +1,6 @@
 # Docs
 
-Starter documentation for **opencv-cloud**. Keep this folder the source of truth for architecture and operations — not the code comments.
+Starter documentation for **brainrot-matcher**. Keep this folder the source of truth for architecture and operations — not the code comments.
 
 | File | Read when |
 | --- | --- |

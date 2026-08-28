@@ -1,6 +1,6 @@
 # Models and backends
 
-What can actually make **opencv-cloud** work, given Vercel cannot run OpenCV Python.
+What can actually make **brainrot-matcher** work, given Vercel cannot run OpenCV Python.
 
 ## What already works
 
@@ -24,7 +24,7 @@ Run OpenCV Zoo ONNX in the page.
 | WeChat QR | Zoo `qrcode_wechatqrcode` | small | Next live add-on. |
 | YOLOX-S | [opencv/object_detection_yolox](https://huggingface.co/opencv/object_detection_yolox) | **~35 MB** | Too heavy for WASM live video. Use Path B. |
 
-INT8 was chosen over FP32 so the Next.js model route stays under Vercel's ~4.5 MB function response limit. OpenCV DNN and ONNX Runtime both emit the same six heads (`2704/676/169` × 80 cls + 32 DFL).
+INT8 was chosen over FP32 so the Next.js model route stays under Vercel’s ~4.5 MB function response limit. OpenCV DNN and ONNX Runtime both emit the same six heads (`2704/676/169` × 80 cls + 32 DFL).
 
 Do **not** put YOLOX-S, EfficientSAM, LAMA, or RAFT in the browser bundle.
 

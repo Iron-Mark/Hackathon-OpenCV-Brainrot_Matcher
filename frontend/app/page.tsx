@@ -300,7 +300,7 @@ export default function Page() {
     <main className="shell" data-sound-played={soundPlayed ? "yes" : "no"}>
       <header className="top">
         <div>
-          <p className="kicker">opencv-cloud · brainrot matcher</p>
+          <p className="kicker">brainrot-matcher</p>
           <h1>Which brainrot character is this?</h1>
           <p className="lede">
             Point a camera or drop a photo. OpenCV scans the frame, then Analyze scores it against
