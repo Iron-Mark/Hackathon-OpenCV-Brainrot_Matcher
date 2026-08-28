@@ -145,6 +145,36 @@ function readFaces(faces: { rows?: number; cols: number; floatAt?: (i: number, j
   return detections;
 }
 
+export function detectYuNetFaces(cv: CvRuntime, imageData: ImageData): Detection[] {
+  if (!detector) {
+    return [];
+  }
+  const src = cv.matFromImageData(imageData);
+  const bgr = new cv.Mat();
+  const facesMat = new cv.Mat();
+  try {
+    cv.cvtColor(src, bgr, cv.COLOR_RGBA2BGR);
+    detector.setInputSize(new cv.Size(bgr.cols, bgr.rows));
+    const detected = detector.detect(bgr, facesMat) as
+      | { rows?: number; cols: number; floatAt?: (i: number, j: number) => number; data32F?: Float32Array }
+      | void;
+    const faces =
+      detected && typeof detected === "object" && "rows" in detected ? detected : facesMat;
+    return readFaces(
+      faces as {
+        rows?: number;
+        cols: number;
+        floatAt?: (i: number, j: number) => number;
+        data32F?: Float32Array;
+      },
+    );
+  } finally {
+    src.delete();
+    bgr.delete();
+    facesMat.delete();
+  }
+}
+
 export async function runBrowserPipeline(
   cv: CvRuntime,
   imageData: ImageData,

@@ -11,6 +11,7 @@ import {
 } from "../lib/match-sound";
 import {
   type PipelineId,
+  detectYuNetFaces,
   drawToCanvas,
   ensureYuNet,
   fileToImageData,
@@ -246,24 +247,37 @@ export default function Page() {
       if (cv) {
         try {
           const scanned = await runBrowserPipeline(cv, frame, "objects");
-          detections = scanned.detections;
-          const n = scanned.detections.length;
+          detections = scanned.detections.filter((det) => det.score >= 0.28);
+          let faces: typeof detections = [];
+          try {
+            await ensureYuNet(cv);
+            faces = detectYuNetFaces(cv, frame).filter((det) => det.score >= 0.55);
+          } catch {
+            faces = [];
+          }
+          const objectBits = detections.slice(0, 4).map((d) => d.label);
+          const parts: string[] = [];
+          if (detections.length) {
+            parts.push(
+              `${detections.length} object${detections.length === 1 ? "" : "s"} (${objectBits.join(", ")})`,
+            );
+          }
+          if (faces.length) {
+            parts.push(`${faces.length} face${faces.length === 1 ? "" : "s"}`);
+          }
           setScanNote(
-            n
-              ? `OpenCV scan: ${n} object${n === 1 ? "" : "s"} (${scanned.detections
-                  .slice(0, 4)
-                  .map((d) => d.label)
-                  .join(", ")})`
-              : "OpenCV scan: no COCO objects — matching on color + silhouette only",
+            parts.length
+              ? `OpenCV scan: ${parts.join(" · ")} — matching the subject, not the background`
+              : "OpenCV scan: no objects — matching isolated foreground color + silhouette",
           );
           if (!live && canvasRef.current) {
             drawToCanvas(canvasRef.current, scanned.imageData);
           }
         } catch {
-          setScanNote("OpenCV object scan skipped — matching on color + silhouette");
+          setScanNote("OpenCV object scan skipped — matching isolated foreground");
         }
       } else {
-        setScanNote("Matching on color + silhouette");
+        setScanNote("Matching isolated foreground color + silhouette");
       }
       const rows = await matchBrainrot(frame, detections);
       setMatches(rows);
@@ -303,8 +317,8 @@ export default function Page() {
           <p className="kicker">brainrot-matcher</p>
           <h1>Which brainrot character is this?</h1>
           <p className="lede">
-            Point a camera or drop a photo. OpenCV scans the frame, then Analyze scores it against
-            17 Italian / Indonesian brainrot mascots.
+            Point a camera or drop a photo. OpenCV isolates the subject, then Analyze scores a
+            percentage against 17 Italian / Indonesian brainrot mascots.
           </p>
         </div>
         <div className={`status ${galleryReady ? "ok" : ""}`}>
