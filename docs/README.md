@@ -8,7 +8,7 @@ Starter documentation for **opencv-cloud**. Keep this folder the source of truth
 | [api.md](api.md) | You are calling or changing the backend |
 | [models.md](models.md) | You are swapping or redistributing weights |
 | [integrations.md](integrations.md) | You need a model + backend that can actually run on Vercel or a container |
-| [deploy.md](deploy.md) | You are putting this on a cloud platform |
+| [characters.md](characters.md) | Brainrot roster, Wikimedia stills, Analyze scoring |
 
 ## Local vs cloud
 
