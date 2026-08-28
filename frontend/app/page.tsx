@@ -9,7 +9,7 @@ import {
   fileToImageData,
   imageDataToUrl,
   loadOpenCv,
-  processImageData,
+  runBrowserPipeline,
 } from "../lib/opencv-browser";
 
 type Pipeline = {
@@ -21,7 +21,7 @@ type Pipeline = {
 
 const PIPELINES: Pipeline[] = [
   { id: "faces", label: "Detect faces", needs_model: "yunet", live: true },
-  { id: "objects", label: "Detect objects", needs_model: "yolox", live: false },
+  { id: "objects", label: "Detect objects", needs_model: "nanodet", live: true },
   { id: "edges", label: "Canny edges", needs_model: null, live: true },
   { id: "grayscale", label: "Grayscale", needs_model: null, live: true },
   { id: "blur", label: "Gaussian blur", needs_model: null, live: true },
@@ -54,6 +54,7 @@ export default function Page() {
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef(0);
   const lastUiRef = useRef(0);
+  const inferringRef = useRef(false);
   const pipelineRef = useRef(pipeline);
   pipelineRef.current = pipeline;
 
@@ -125,38 +126,43 @@ export default function Page() {
     }
     ctx.drawImage(video, 0, 0, width, height);
     const frame = ctx.getImageData(0, 0, width, height);
-    try {
-      const current = pipelineRef.current === "objects" ? "faces" : pipelineRef.current;
-      const processed = processImageData(cv, frame, current);
-      drawToCanvas(canvas, processed.imageData);
-      const now = performance.now();
-      if (now - lastUiRef.current > 200) {
-        lastUiRef.current = now;
-        setFps(processed.elapsedMs > 0 ? Math.round(1000 / processed.elapsedMs) : 0);
-        setResult({
-          pipeline: current,
-          width,
-          height,
-          elapsed_ms: Math.round(processed.elapsedMs * 10) / 10,
-          model: current === "faces" ? "yunet" : "opencv.js",
-          image: "",
-          detections: processed.detections,
-        });
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Live frame failed");
-      stopCamera();
+    const current = pipelineRef.current;
+    if (inferringRef.current) {
+      rafRef.current = requestAnimationFrame(loop);
       return;
     }
+    inferringRef.current = true;
+    void (async () => {
+      try {
+        const processed = await runBrowserPipeline(cv, frame, current);
+        drawToCanvas(canvas, processed.imageData);
+        const now = performance.now();
+        if (now - lastUiRef.current > 200) {
+          lastUiRef.current = now;
+          setFps(processed.elapsedMs > 0 ? Math.round(1000 / processed.elapsedMs) : 0);
+          setResult({
+            pipeline: current,
+            width,
+            height,
+            elapsed_ms: Math.round(processed.elapsedMs * 10) / 10,
+            model: processed.model,
+            image: "",
+            detections: processed.detections,
+          });
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Live frame failed");
+        stopCamera();
+      } finally {
+        inferringRef.current = false;
+      }
+    })();
     rafRef.current = requestAnimationFrame(loop);
   }, [stopCamera]);
 
   async function startCamera() {
     setError("");
     setResult(null);
-    if (pipeline === "objects") {
-      setPipeline("faces");
-    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -190,30 +196,30 @@ export default function Page() {
     setBusy(true);
     setError("");
     try {
-      if (pipeline === "objects") {
-        const body = new FormData();
-        body.set("file", file);
-        body.set("pipeline", pipeline);
-        const res = await fetch("/api/v1/process", { method: "POST", body });
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.detail ?? "Object detection needs the Python backend");
+      if (pipeline === "objects" && backend) {
+        try {
+          const body = new FormData();
+          body.set("file", file);
+          body.set("pipeline", pipeline);
+          const res = await fetch("/api/v1/process", { method: "POST", body });
+          const data = await res.json();
+          if (res.ok) {
+            setResult(data as ProcessResponse);
+            return;
+          }
+        } catch {
+          // Fall through to in-browser NanoDet when YOLOX is unreachable.
         }
-        setResult(data as ProcessResponse);
-        return;
       }
       const cv = await loadOpenCv();
-      if (pipeline === "faces") {
-        await ensureYuNet(cv);
-      }
       const input = await fileToImageData(file);
-      const processed = processImageData(cv, input, pipeline);
+      const processed = await runBrowserPipeline(cv, input, pipeline);
       setResult({
         pipeline,
         width: processed.imageData.width,
         height: processed.imageData.height,
         elapsed_ms: Math.round(processed.elapsedMs * 10) / 10,
-        model: pipeline === "faces" ? "yunet" : "opencv.js",
+        model: processed.model,
         image: imageDataToUrl(processed.imageData),
         detections: processed.detections,
       });
@@ -231,8 +237,8 @@ export default function Page() {
           <p className="kicker">opencv-cloud</p>
           <h1>Live OpenCV in the Vercel build</h1>
           <p className="lede">
-            Webcam and stills run in the browser with OpenCV.js and YuNet. The Python backend is
-            optional and only needed for YOLOX objects.
+            Webcam and stills run in the browser with OpenCV.js, YuNet, and NanoDet. The Python
+            backend is optional and only used for YOLOX stills when it is reachable.
           </p>
         </div>
         <div className={`status ${engine === "browser" ? "ok" : engine === "failed" ? "bad" : ""}`}>
@@ -290,7 +296,13 @@ export default function Page() {
                 />
                 <span>
                   {item.label}
-                  {item.live ? " · live" : " · server"}
+                  {item.id === "objects"
+                    ? backend
+                      ? " · live NanoDet / still YOLOX"
+                      : " · live NanoDet"
+                    : item.live
+                      ? " · live"
+                      : " · server"}
                 </span>
               </label>
             ))}
@@ -308,6 +320,7 @@ export default function Page() {
             <video ref={videoRef} playsInline muted hidden />
             <canvas ref={canvasRef} className={live ? "show" : "hide"} />
             {!live && result?.image ? (
+              // eslint-disable-next-line @next/next/no-img-element
               <img src={result.image} alt="Pipeline output" />
             ) : null}
             {!live && !result?.image ? <p className="lede">Start the camera or run a still.</p> : null}

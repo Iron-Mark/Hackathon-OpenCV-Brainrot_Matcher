@@ -2,15 +2,15 @@
 
 A small computer-vision starter: **docs**, **frontend**, **backend**, and **infra**.
 
-The Vercel build runs **live OpenCV in the browser** (webcam + YuNet + filters). The Python backend is optional and only needed for YOLOX object detection.
+The Vercel build runs **live OpenCV in the browser** (webcam + YuNet + NanoDet + filters). The Python backend is optional and only needed for YOLOX object stills.
 
 Production: [https://opencv-cloud.vercel.app](https://opencv-cloud.vercel.app)
 
 ```
 opencv-cloud/
 ├── docs/        architecture, API, models, deploy
-├── frontend/    Next.js + OpenCV.js (Vercel)
-├── backend/     FastAPI + OpenCV DNN (optional)
+├── frontend/    Next.js + OpenCV.js + NanoDet (Vercel)
+├── backend/     FastAPI + OpenCV DNN (optional YOLOX)
 └── infra/       Docker Compose + Dockerfiles
 ```
 
@@ -22,7 +22,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Use **Start live camera** or upload a still. No Python process is required for faces / edges / grayscale / blur.
+Open [http://localhost:3000](http://localhost:3000). Use **Start live camera** or upload a still. No Python process is required for faces / objects / edges / grayscale / blur.
 
 ## Quick start (Docker, including YOLOX)
 
@@ -55,10 +55,10 @@ The Next.js app proxies `/api/*` to `API_URL` (default `http://127.0.0.1:8000`).
 
 ## Cloud
 
-- **Live app** → Vercel, root directory `frontend` (OpenCV.js + YuNet, no backend required).
-- **Optional API** → container from `infra/Dockerfile.backend`, then set `API_URL` for YOLOX.
+- **Live app** → Vercel, root directory `frontend` (OpenCV.js + YuNet + NanoDet, no backend required).
+- **Optional API** → container from `infra/Dockerfile.backend`, then set `API_URL` for YOLOX stills.
 
-Details: [docs/deploy.md](docs/deploy.md).
+Details: [docs/deploy.md](docs/deploy.md) and [docs/integrations.md](docs/integrations.md).
 
 ## Docs
 
@@ -68,6 +68,7 @@ Details: [docs/deploy.md](docs/deploy.md).
 | [docs/architecture.md](docs/architecture.md) | How the four folders fit together |
 | [docs/api.md](docs/api.md) | Backend HTTP contract |
 | [docs/models.md](docs/models.md) | Open-weight models and licenses |
+| [docs/integrations.md](docs/integrations.md) | Which models and hosts make the project work |
 | [docs/deploy.md](docs/deploy.md) | Vercel + container backend |
 
 ## License

@@ -1,14 +1,11 @@
+import { drawDetections, ensureNanoDet, inferNanoDet } from "./nanodet";
+import type { Detection, PipelineId } from "./types";
+
+export type { Detection, PipelineId };
+
 export const YUNET_PATH = "/models/yunet";
 export const OPENCV_JS_SRC =
   "https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0/dist/opencv.js";
-
-export type Detection = {
-  label: string;
-  score: number;
-  box: { x: number; y: number; w: number; h: number };
-};
-
-export type PipelineId = "faces" | "objects" | "edges" | "grayscale" | "blur";
 
 type CvRuntime = {
   Mat: new () => { delete: () => void; cols: number; rows: number; data: Uint8Array };
@@ -103,11 +100,7 @@ export async function ensureYuNet(cv: CvRuntime): Promise<void> {
   detector = new cv.FaceDetectorYN("/yunet.onnx", "", new cv.Size(320, 320), 0.7, 0.3, 5000);
 }
 
-function faceValue(
-  faces: { floatAt?: (i: number, j: number) => number; data32F?: Float32Array; cols: number },
-  row: number,
-  col: number,
-) {
+function faceValue(faces: { floatAt?: (i: number, j: number) => number; data32F?: Float32Array; cols: number }, row: number, col: number) {
   if (faces.floatAt) {
     return faces.floatAt(row, col);
   }
@@ -117,14 +110,7 @@ function faceValue(
   return 0;
 }
 
-function readFaces(
-  faces: {
-    rows?: number;
-    cols: number;
-    floatAt?: (i: number, j: number) => number;
-    data32F?: Float32Array;
-  } | null,
-): Detection[] {
+function readFaces(faces: { rows?: number; cols: number; floatAt?: (i: number, j: number) => number; data32F?: Float32Array } | null): Detection[] {
   if (!faces?.rows) {
     return [];
   }
@@ -144,13 +130,39 @@ function readFaces(
   return detections;
 }
 
+export async function runBrowserPipeline(
+  cv: CvRuntime,
+  imageData: ImageData,
+  pipeline: PipelineId,
+): Promise<{ imageData: ImageData; detections: Detection[]; elapsedMs: number; model: string }> {
+  const started = performance.now();
+  if (pipeline === "objects") {
+    await ensureNanoDet();
+    const detections = await inferNanoDet(imageData);
+    return {
+      imageData: drawDetections(imageData, detections),
+      detections,
+      elapsedMs: performance.now() - started,
+      model: "nanodet",
+    };
+  }
+  if (pipeline === "faces") {
+    await ensureYuNet(cv);
+  }
+  const result = processImageData(cv, imageData, pipeline);
+  return {
+    ...result,
+    model: pipeline === "faces" ? "yunet" : "opencv.js",
+  };
+}
+
 export function processImageData(
   cv: CvRuntime,
   imageData: ImageData,
   pipeline: PipelineId,
 ): { imageData: ImageData; detections: Detection[]; elapsedMs: number } {
   if (pipeline === "objects") {
-    throw new Error("Object detection needs the Python backend");
+    throw new Error("Object detection uses NanoDet in the browser");
   }
   const started = performance.now();
   const src = cv.matFromImageData(imageData);
@@ -181,25 +193,9 @@ export function processImageData(
       cv.cvtColor(src, bgr, cv.COLOR_RGBA2BGR);
       detector.setInputSize(new cv.Size(bgr.cols, bgr.rows));
       const facesMat = new cv.Mat();
-      const detected = detector.detect(bgr, facesMat) as
-        | {
-            rows?: number;
-            cols: number;
-            floatAt?: (i: number, j: number) => number;
-            data32F?: Float32Array;
-            delete?: () => void;
-          }
-        | void;
-      const faces =
-        detected && typeof detected === "object" && "rows" in detected ? detected : facesMat;
-      detections = readFaces(
-        faces as {
-          rows?: number;
-          cols: number;
-          floatAt?: (i: number, j: number) => number;
-          data32F?: Float32Array;
-        },
-      );
+      const detected = detector.detect(bgr, facesMat) as { rows?: number; cols: number; floatAt?: (i: number, j: number) => number; data32F?: Float32Array; delete?: () => void } | void;
+      const faces = detected && typeof detected === "object" && "rows" in detected ? detected : facesMat;
+      detections = readFaces(faces as { rows?: number; cols: number; floatAt?: (i: number, j: number) => number; data32F?: Float32Array });
       const color = new cv.Scalar(66, 180, 245, 255);
       for (const det of detections) {
         const x = Math.round(det.box.x);
