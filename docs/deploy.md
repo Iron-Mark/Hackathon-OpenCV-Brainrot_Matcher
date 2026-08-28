@@ -4,7 +4,8 @@ The **Vercel production build is the live app**. Webcam + YuNet + NanoDet + filt
 
 ## Frontend (Vercel)
 
-- Project: `opencv-cloud` (root directory `frontend`)
+- GitHub repo: `brainrot-matcher` (formerly `opencv-cloud`)
+- Vercel project: `opencv-cloud` (root directory `frontend`) — keep this name so the live URL stays https://opencv-cloud.vercel.app
 - Production: https://opencv-cloud.vercel.app
 - No `API_URL` is required. OpenCV.js and onnxruntime-web load from jsDelivr; YuNet and NanoDet are fetched through `/models/*` and cached.
 

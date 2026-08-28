@@ -1,18 +1,25 @@
-# opencv-cloud
+# brainrot-matcher
 
-A small computer-vision starter: **docs**, **frontend**, **backend**, and **infra**.
+Point a camera or drop a photo. OpenCV scans the frame, then **Analyze match** scores it against 17 Italian / Indonesian brainrot mascots and plays that character’s chant.
 
-The Vercel build runs **live OpenCV in the browser** and can **match a photo or webcam frame to Italian brainrot characters**. The Python backend is optional (YOLOX stills).
-
-Production: [https://opencv-cloud.vercel.app](https://opencv-cloud.vercel.app)
+Live app: [https://opencv-cloud.vercel.app](https://opencv-cloud.vercel.app)
 
 ```
-opencv-cloud/
-├── docs/        architecture, API, models, deploy
-├── frontend/    Next.js + OpenCV.js + NanoDet (Vercel)
-├── backend/     FastAPI + OpenCV DNN (optional YOLOX)
+brainrot-matcher/
+├── docs/        architecture, API, models, deploy, character roster
+├── frontend/    Next.js matcher (Vercel): OpenCV.js, NanoDet, chants
+├── backend/     FastAPI + OpenCV DNN (optional YOLOX stills)
 └── infra/       Docker Compose + Dockerfiles
 ```
+
+## What it does
+
+- Live camera or image upload
+- **Analyze match** → percentage + top three runners-up
+- Per-character sting + TTS chant, with **Replay** on the result card
+- Optional OpenCV overlays: faces, objects, edges, gray, blur
+
+This is closest-vibe matching, not identity verification.
 
 ## Quick start (frontend only)
 
@@ -22,43 +29,14 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Use **Start live camera** or upload a still. No Python process is required for faces / objects / edges / grayscale / blur.
-
-## Quick start (Docker, including YOLOX)
-
-```bash
-docker compose -f infra/docker-compose.yml up --build
-```
-
-- App: [http://localhost:3000](http://localhost:3000)
-- API: [http://localhost:8000/health](http://localhost:8000/health)
-
-First backend boot downloads YuNet and YOLOX into `backend/weights/` (cached afterwards).
-
-## Quick start (local)
-
-```bash
-# backend
-cd backend
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-python scripts/download_models.py
-uvicorn app.main:app --reload --port 8000
-
-# frontend (second terminal)
-cd frontend
-npm install
-npm run dev
-```
-
-The Next.js app proxies `/api/*` to `API_URL` (default `http://127.0.0.1:8000`). See `.env.example`.
+Open [http://localhost:3000](http://localhost:3000). No Python process is required for matching.
 
 ## Cloud
 
-- **Live app** → Vercel, root directory `frontend` (OpenCV.js + YuNet + NanoDet, no backend required).
-- **Optional API** → container from `infra/Dockerfile.backend`, then set `API_URL` for YOLOX stills.
+- **Live app** → Vercel, root directory `frontend`
+- **Optional YOLOX API** → container from `infra/Dockerfile.backend`, then set `API_URL`
 
-Details: [docs/deploy.md](docs/deploy.md) and [docs/integrations.md](docs/integrations.md).
+Details: [docs/deploy.md](docs/deploy.md), [docs/characters.md](docs/characters.md)
 
 ## Docs
 
@@ -69,7 +47,7 @@ Details: [docs/deploy.md](docs/deploy.md) and [docs/integrations.md](docs/integr
 | [docs/api.md](docs/api.md) | Backend HTTP contract |
 | [docs/models.md](docs/models.md) | Open-weight models and licenses |
 | [docs/integrations.md](docs/integrations.md) | Which models and hosts make the project work |
-| [docs/characters.md](docs/characters.md) | Brainrot roster and Analyze matcher |
+| [docs/characters.md](docs/characters.md) | Brainrot roster, scoring, and chants |
 
 ## License
 
