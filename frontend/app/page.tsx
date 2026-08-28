@@ -4,6 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BRAINROT_CHARACTERS } from "../lib/characters";
 import { ensureGallery, matchBrainrot, type MatchRow } from "../lib/match-brainrot";
 import {
+  playMatchComplete,
+  setSoundEnabled,
+  soundEnabled,
+  unlockMatchAudio,
+} from "../lib/match-sound";
+import {
   type PipelineId,
   drawToCanvas,
   ensureYuNet,
@@ -32,6 +38,8 @@ export default function Page() {
   const [error, setError] = useState("");
   const [matches, setMatches] = useState<MatchRow[] | null>(null);
   const [scanNote, setScanNote] = useState("");
+  const [soundOn, setSoundOn] = useState(true);
+  const [soundPlayed, setSoundPlayed] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scratchRef = useRef<HTMLCanvasElement | null>(null);
@@ -72,6 +80,10 @@ export default function Page() {
       })();
     }
     return cvLoadRef.current;
+  }, []);
+
+  useEffect(() => {
+    setSoundOn(soundEnabled());
   }, []);
 
   useEffect(() => {
@@ -227,6 +239,7 @@ export default function Page() {
     }
     setBusy(true);
     setError("");
+    await unlockMatchAudio();
     try {
       const cv = cvRef.current;
       let detections: { label: string; score: number; box: { x: number; y: number; w: number; h: number } }[] = [];
@@ -254,6 +267,10 @@ export default function Page() {
       }
       const rows = await matchBrainrot(frame, detections);
       setMatches(rows);
+      const winner = rows[0];
+      if (winner) {
+        setSoundPlayed(playMatchComplete(winner.character.name, winner.percent));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Analyze failed");
     } finally {
@@ -280,7 +297,7 @@ export default function Page() {
   }, [engine, galleryReady, live]);
 
   return (
-    <main className="shell">
+    <main className="shell" data-sound-played={soundPlayed ? "yes" : "no"}>
       <header className="top">
         <div>
           <p className="kicker">opencv-cloud · brainrot matcher</p>
@@ -347,6 +364,21 @@ export default function Page() {
           >
             {busy ? "Analyzing…" : "Analyze match"}
           </button>
+          <button
+            className="sound-toggle"
+            type="button"
+            aria-pressed={soundOn}
+            onClick={() => {
+              const next = !soundOn;
+              setSoundOn(next);
+              setSoundEnabled(next);
+              if (next) {
+                void unlockMatchAudio();
+              }
+            }}
+          >
+            {soundOn ? "Sound on · sting + name" : "Sound off"}
+          </button>
           {error ? <p className="error">{error}</p> : null}
         </section>
 
@@ -361,7 +393,7 @@ export default function Page() {
       </div>
 
       {top ? (
-        <section className="panel match-panel">
+        <section className="panel match-panel" data-sound={soundOn ? "on" : "off"}>
           <h2>Match</h2>
           <div className="match-hero">
             {/* eslint-disable-next-line @next/next/no-img-element */}

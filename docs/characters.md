@@ -14,6 +14,7 @@ Tralalero Tralala, Tung Tung Tung Sahur, Bombardiro Crocodilo, Bombombini Gusini
 2. On **Analyze match**, matching runs even if OpenCV.js is still loading. If OpenCV is ready, NanoDet lists COCO objects as a hint; color + silhouette fingerprints are compared to every gallery still.
 3. Score mix: 55% HSV histogram correlation, 25% mean/std color, 20% horizontal-edge silhouette. A small boost if NanoDet labels overlap a character’s hints (airplane → Bombardiro, cup → Cappuccino, cat → Trippi Troppi, …).
 4. The UI shows a percentage and the next three runners-up. This is a **closest-vibe** score, not identity verification — a random bus photo can still land ~50% on the shark.
+5. When Analyze finishes, the page plays a short Web Audio sting and (if the browser has voices) speaks the character name in Italian TTS. Toggle **Sound on / Sound off** under the button. Audio is unlocked on the Analyze click so it is not blocked by autoplay policy.
 
 ## Sources used for research (not wiki dumps)
 
