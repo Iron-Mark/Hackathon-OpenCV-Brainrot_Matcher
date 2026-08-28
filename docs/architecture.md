@@ -3,15 +3,15 @@
 Four top-level folders. Nothing else is required to run the starter.
 
 ```
-┌────────────┐     /api/* rewrite      ┌────────────┐
-│  frontend  │ ──────────────────────陔 │  backend   │
-│  Next.js   │                         │  FastAPI   │
-│  :3000     │                         │  :8000     │
-└────────────┘                         └──────┬──────┘
-                                             │
++------------+     /api/* rewrite      +------------+
+|  frontend  | ----------------------> |  backend   |
+|  Next.js   |                         |  FastAPI   |
+|  :3000     |                         |  :8000     |
++------------+                         +-----+------+
+                                             |
                                        OpenCV DNN
                                        YuNet / YOLOX
-                                             │
+                                             |
                                        backend/weights/
 ```
 
