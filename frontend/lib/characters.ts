@@ -28,7 +28,7 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     origin: "Italian · Jan 2025",
     blurb: "Three-legged blue shark in Nike sneakers. The mascot that started the wave.",
     image: "/models/brainrot/tralalero-tralala",
-    cocoHints: ["person"],
+    cocoHints: [],
     theme: {
       chant: "Tralalero Tralala. Tralalero Tralala.",
       freqs: [220, 277, 330, 440],
@@ -47,7 +47,7 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     origin: "Indonesian · Feb 2025",
     blurb: "Wooden night-patrol spirit with a bat. “Tung tung tung” is the sahur drum.",
     image: "/models/brainrot/tung-tung-tung-sahur",
-    cocoHints: ["baseball bat", "person"],
+    cocoHints: ["baseball bat"],
     theme: {
       chant: "Tung tung tung sahur. Tung tung tung sahur.",
       freqs: [98, 98, 98, 147],
@@ -161,7 +161,7 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     origin: "Italian",
     blurb: "Tutu, pointe shoes, cappuccino-mug head. The pirouette that hit late-night TV.",
     image: "/models/brainrot/ballerina-cappuccina",
-    cocoHints: ["person", "cup"],
+    cocoHints: ["cup"],
     theme: {
       chant: "Ballerina Cappuccina.",
       freqs: [523, 659, 784, 1046],
@@ -180,7 +180,7 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     origin: "Italian",
     blurb: "Chimpanzee with a banana for a body. Tagged “indestructible” in the lore.",
     image: "/models/brainrot/chimpanzini-bananini",
-    cocoHints: ["banana", "person"],
+    cocoHints: ["banana"],
     theme: {
       chant: "Chimpanzini Bananini.",
       freqs: [294, 370, 440, 587],
