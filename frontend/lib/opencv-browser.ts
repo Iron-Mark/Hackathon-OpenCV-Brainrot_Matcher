@@ -5,9 +5,9 @@ export type { Detection, PipelineId };
 
 export const YUNET_PATH = "/models/yunet";
 export const OPENCV_JS_SRC =
-  "https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0/dist/opencv.js";
+  "https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js";
 
-type CvRuntime = {
+export type CvRuntime = {
   Mat: new () => { delete: () => void; cols: number; rows: number; data: Uint8Array };
   Size: new (w: number, h: number) => unknown;
   Point: new (x: number, y: number) => unknown;
@@ -42,12 +42,33 @@ type CvRuntime = {
 
 declare global {
   interface Window {
-    cv?: CvRuntime & { onRuntimeInitialized?: () => void };
+    cv?: CvRuntime & { onRuntimeInitialized?: () => void; then?: Promise<CvRuntime>["then"] };
   }
 }
 
 let loadPromise: Promise<CvRuntime> | null = null;
 let detector: InstanceType<CvRuntime["FaceDetectorYN"]> | null = null;
+
+async function unwrapCv(raw: unknown): Promise<CvRuntime> {
+  let cv = raw as CvRuntime & { then?: Promise<CvRuntime>["then"]; onRuntimeInitialized?: () => void };
+  if (cv && typeof cv.then === "function" && !cv.Mat) {
+    cv = (await Promise.resolve(cv as unknown)) as CvRuntime & { onRuntimeInitialized?: () => void };
+  }
+  if (cv?.Mat) {
+    return cv as CvRuntime;
+  }
+  return new Promise((resolve, reject) => {
+    if (!cv) {
+      reject(new Error("OpenCV.js loaded without cv"));
+      return;
+    }
+    const timer = window.setTimeout(() => reject(new Error("OpenCV.js runtime timed out")), 30000);
+    cv.onRuntimeInitialized = () => {
+      window.clearTimeout(timer);
+      resolve((window.cv as CvRuntime) ?? (cv as CvRuntime));
+    };
+  });
+}
 
 export function loadOpenCv(): Promise<CvRuntime> {
   if (typeof window === "undefined") {
@@ -61,16 +82,10 @@ export function loadOpenCv(): Promise<CvRuntime> {
   }
   loadPromise = new Promise((resolve, reject) => {
     const finish = () => {
-      const cv = window.cv;
-      if (!cv) {
-        reject(new Error("OpenCV.js loaded without cv"));
-        return;
-      }
-      if (cv.Mat) {
-        resolve(cv as CvRuntime);
-        return;
-      }
-      cv.onRuntimeInitialized = () => resolve(window.cv as CvRuntime);
+      void unwrapCv(window.cv).then((cv) => {
+        window.cv = cv;
+        resolve(cv);
+      }, reject);
     };
     if (document.querySelector("script[data-opencv-js]")) {
       finish();
