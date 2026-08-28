@@ -1,6 +1,8 @@
 # API
 
-Base URL: the backend origin (`http://127.0.0.1:8000` locally). Through the frontend, the same paths are available under `/api`.
+Base URL: the backend origin (`http://127.0.0.1:8000` locally). Through the frontend, the same paths are available under `/api` when `API_URL` is set.
+
+The Vercel UI does **not** need this API for live vision. Faces and objects run in the browser (YuNet / NanoDet). This contract is for the optional YOLOX container.
 
 ## `GET /health`
 
