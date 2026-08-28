@@ -161,6 +161,17 @@ label.file:hover {
   cursor: not-allowed;
 }
 
+.run.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+
+.live-row {
+  margin-bottom: 4px;
+}
+
 .error {
   color: var(--danger);
   font-size: 13px;
@@ -176,9 +187,18 @@ label.file:hover {
   overflow: hidden;
 }
 
-.stage img {
+.stage img,
+.stage canvas {
   max-width: 100%;
   max-height: 520px;
+  display: block;
+}
+
+.stage canvas.hide {
+  display: none;
+}
+
+.stage canvas.show {
   display: block;
 }
 
