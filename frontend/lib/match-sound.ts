@@ -1,3 +1,5 @@
+import type { BrainrotCharacter } from "./characters";
+
 const STORAGE_KEY = "opencv-cloud-sound";
 
 let ctx: AudioContext | null = null;
@@ -15,7 +17,7 @@ export function setSoundEnabled(on: boolean) {
   }
   window.localStorage.setItem(STORAGE_KEY, on ? "on" : "off");
   if (!on) {
-    window.speechSynthesis?.cancel();
+    stopMatchAudio();
   }
 }
 
@@ -35,7 +37,11 @@ function audio(): AudioContext | null {
   return ctx;
 }
 
-/** Call from the Analyze click so autoplay policy allows the later sting. */
+export function stopMatchAudio() {
+  window.speechSynthesis?.cancel();
+}
+
+/** Call from a user click so autoplay policy allows the later sting. */
 export async function unlockMatchAudio(): Promise<void> {
   const ac = audio();
   if (ac?.state === "suspended") {
@@ -49,15 +55,15 @@ function tone(
   freq: number,
   start: number,
   dur: number,
-  type: OscillatorType = "square",
-  gain = 0.09,
+  type: OscillatorType,
+  gain: number,
 ) {
   const osc = ac.createOscillator();
   const g = ac.createGain();
   osc.type = type;
   osc.frequency.value = freq;
   g.gain.setValueAtTime(0.0001, start);
-  g.gain.exponentialRampToValueAtTime(gain, start + 0.018);
+  g.gain.exponentialRampToValueAtTime(gain, start + 0.016);
   g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
   osc.connect(g);
   g.connect(ac.destination);
@@ -65,7 +71,7 @@ function tone(
   osc.stop(start + dur + 0.02);
 }
 
-export function playRevealSting(): boolean {
+export function playCharacterSting(character: BrainrotCharacter): boolean {
   if (!soundEnabled()) {
     return false;
   }
@@ -73,44 +79,48 @@ export function playRevealSting(): boolean {
   if (!ac) {
     return false;
   }
-  const t = ac.currentTime + 0.02;
-  tone(ac, 392, t, 0.11);
-  tone(ac, 523.25, t + 0.1, 0.11);
-  tone(ac, 659.25, t + 0.2, 0.13);
-  tone(ac, 784, t + 0.33, 0.32, "square", 0.11);
+  const { freqs, gap, dur, wave, gain } = character.theme;
+  const t0 = ac.currentTime + 0.02;
+  freqs.forEach((freq, index) => {
+    tone(ac, freq, t0 + index * gap, dur, wave, gain);
+  });
   return true;
 }
 
-function pickItalianVoice(): SpeechSynthesisVoice | undefined {
+function pickVoice(lang: string): SpeechSynthesisVoice | undefined {
   const voices = window.speechSynthesis?.getVoices() ?? [];
+  const prefix = lang.slice(0, 2).toLowerCase();
   return (
+    voices.find((voice) => voice.lang.toLowerCase().startsWith(prefix)) ??
     voices.find((voice) => voice.lang.toLowerCase().startsWith("it")) ??
     voices.find((voice) => /italian/i.test(voice.name))
   );
 }
 
-export function announceMatch(name: string, percent: number) {
+export function announceCharacter(character: BrainrotCharacter) {
   if (!soundEnabled() || typeof window === "undefined" || !window.speechSynthesis) {
     return;
   }
   window.speechSynthesis.cancel();
-  const utter = new SpeechSynthesisUtterance(`${name}. ${percent} percent.`);
-  utter.lang = "it-IT";
-  utter.rate = 1.04;
-  utter.pitch = 1.12;
-  const voice = pickItalianVoice();
+  const utter = new SpeechSynthesisUtterance(character.theme.chant);
+  utter.lang = character.theme.lang;
+  utter.rate = character.theme.rate;
+  utter.pitch = character.theme.pitch;
+  const voice = pickVoice(character.theme.lang);
   if (voice) {
     utter.voice = voice;
   }
+  const delay = Math.round((character.theme.freqs.length * character.theme.gap + 0.12) * 1000);
   window.setTimeout(() => {
     if (soundEnabled()) {
       window.speechSynthesis.speak(utter);
     }
-  }, 420);
+  }, delay);
 }
 
-export function playMatchComplete(name: string, percent: number): boolean {
-  const played = playRevealSting();
-  announceMatch(name, percent);
+export function playMatchComplete(character: BrainrotCharacter): boolean {
+  stopMatchAudio();
+  const played = playCharacterSting(character);
+  announceCharacter(character);
   return played;
 }
