@@ -21,7 +21,7 @@ const SCANS: { id: PipelineId; label: string }[] = [
 ];
 
 export default function Page() {
-  const [engine, setEngine] = useState<"loading" | "browser" | "failed">("loading");
+  const [engine, setEngine] = useState<"off" | "loading" | "browser" | "failed">("off");
   const [galleryReady, setGalleryReady] = useState(false);
   const [scan, setScan] = useState<PipelineId>("faces");
   const [fileLabel, setFileLabel] = useState("Drop a PNG, JPEG, or WebP");
@@ -45,6 +45,35 @@ export default function Page() {
   const scanRef = useRef(scan);
   scanRef.current = scan;
 
+  const cvLoadRef = useRef<Promise<Awaited<ReturnType<typeof loadOpenCv>> | null> | null>(null);
+
+  const loadCv = useCallback(() => {
+    if (cvRef.current) {
+      return Promise.resolve(cvRef.current);
+    }
+    if (!cvLoadRef.current) {
+      setEngine("loading");
+      cvLoadRef.current = (async () => {
+        try {
+          const cv = await loadOpenCv();
+          cvRef.current = cv;
+          try {
+            await ensureYuNet(cv);
+          } catch {
+            // Faces overlay is optional; matching still works.
+          }
+          setEngine("browser");
+          return cv;
+        } catch {
+          setEngine("failed");
+          cvLoadRef.current = null;
+          return null;
+        }
+      })();
+    }
+    return cvLoadRef.current;
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     void ensureGallery()
@@ -58,24 +87,6 @@ export default function Page() {
           setError(err instanceof Error ? err.message : "Character gallery failed to load");
         }
       });
-    (async () => {
-      try {
-        const cv = await loadOpenCv();
-        cvRef.current = cv;
-        if (!cancelled) {
-          setEngine("browser");
-        }
-        try {
-          await ensureYuNet(cv);
-        } catch {
-          // Faces overlay is optional; matching still works.
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setEngine("failed");
-        }
-      }
-    })();
     return () => {
       cancelled = true;
     };
@@ -169,6 +180,7 @@ export default function Page() {
       setLive(true);
       setHasFrame(false);
       hasFrameRef.current = false;
+      void loadCv();
       rafRef.current = requestAnimationFrame(loop);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Camera permission denied");
@@ -238,7 +250,7 @@ export default function Page() {
           setScanNote("OpenCV object scan skipped — matching on color + silhouette");
         }
       } else {
-        setScanNote("Matching on color + silhouette (OpenCV still loading)");
+        setScanNote("Matching on color + silhouette");
       }
       const rows = await matchBrainrot(frame, detections);
       setMatches(rows);
@@ -317,7 +329,10 @@ export default function Page() {
                   name="scan"
                   value={item.id}
                   checked={scan === item.id}
-                  onChange={() => setScan(item.id)}
+                  onChange={() => {
+                    setScan(item.id);
+                    void loadCv();
+                  }}
                 />
                 {item.label}
               </label>
