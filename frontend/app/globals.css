@@ -168,6 +168,21 @@ label.file:hover {
   margin-bottom: 12px;
 }
 
+.sound-toggle {
+  width: 100%;
+  margin-top: 8px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.sound-toggle[aria-pressed="true"] {
+  color: var(--text);
+}
+
 .scan-label {
   margin: 14px 0 8px;
   font-size: 11px;
