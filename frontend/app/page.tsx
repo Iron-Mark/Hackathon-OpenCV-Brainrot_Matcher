@@ -1,87 +1,91 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BRAINROT_CHARACTERS } from "../lib/characters";
+import { ensureGallery, matchBrainrot, type MatchRow } from "../lib/match-brainrot";
 import {
-  type Detection,
   type PipelineId,
   drawToCanvas,
   ensureYuNet,
   fileToImageData,
-  imageDataToUrl,
   loadOpenCv,
   runBrowserPipeline,
 } from "../lib/opencv-browser";
 
-type Pipeline = {
-  id: PipelineId;
-  label: string;
-  needs_model: string | null;
-  live: boolean;
-};
-
-const PIPELINES: Pipeline[] = [
-  { id: "faces", label: "Detect faces", needs_model: "yunet", live: true },
-  { id: "objects", label: "Detect objects", needs_model: "nanodet", live: true },
-  { id: "edges", label: "Canny edges", needs_model: null, live: true },
-  { id: "grayscale", label: "Grayscale", needs_model: null, live: true },
-  { id: "blur", label: "Gaussian blur", needs_model: null, live: true },
+const SCANS: { id: PipelineId; label: string }[] = [
+  { id: "faces", label: "Faces" },
+  { id: "objects", label: "Objects" },
+  { id: "edges", label: "Edges" },
+  { id: "grayscale", label: "Gray" },
+  { id: "blur", label: "Blur" },
 ];
 
-type ProcessResponse = {
-  pipeline: string;
-  width: number;
-  height: number;
-  elapsed_ms: number;
-  model: string | null;
-  image: string;
-  detections: Detection[];
-};
-
 export default function Page() {
-  const [engine, setEngine] = useState<"loading" | "browser" | "failed">("loading");
-  const [backend, setBackend] = useState(false);
-  const [pipeline, setPipeline] = useState<PipelineId>("faces");
-  const [file, setFile] = useState<File | null>(null);
-  const [result, setResult] = useState<ProcessResponse | null>(null);
+  const [engine, setEngine] = useState<"off" | "loading" | "browser" | "failed">("off");
+  const [galleryReady, setGalleryReady] = useState(false);
+  const [scan, setScan] = useState<PipelineId>("faces");
+  const [fileLabel, setFileLabel] = useState("Drop a PNG, JPEG, or WebP");
   const [busy, setBusy] = useState(false);
   const [live, setLive] = useState(false);
+  const [hasFrame, setHasFrame] = useState(false);
   const [fps, setFps] = useState(0);
   const [error, setError] = useState("");
+  const [matches, setMatches] = useState<MatchRow[] | null>(null);
+  const [scanNote, setScanNote] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scratchRef = useRef<HTMLCanvasElement | null>(null);
+  const stillRef = useRef<ImageData | null>(null);
+  const hasFrameRef = useRef(false);
   const cvRef = useRef<Awaited<ReturnType<typeof loadOpenCv>> | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef(0);
   const lastUiRef = useRef(0);
   const inferringRef = useRef(false);
-  const pipelineRef = useRef(pipeline);
-  pipelineRef.current = pipeline;
+  const scanRef = useRef(scan);
+  scanRef.current = scan;
+
+  const cvLoadRef = useRef<Promise<Awaited<ReturnType<typeof loadOpenCv>> | null> | null>(null);
+
+  const loadCv = useCallback(() => {
+    if (cvRef.current) {
+      return Promise.resolve(cvRef.current);
+    }
+    if (!cvLoadRef.current) {
+      setEngine("loading");
+      cvLoadRef.current = (async () => {
+        try {
+          const cv = await loadOpenCv();
+          cvRef.current = cv;
+          try {
+            await ensureYuNet(cv);
+          } catch {
+            // Faces overlay is optional; matching still works.
+          }
+          setEngine("browser");
+          return cv;
+        } catch {
+          setEngine("failed");
+          cvLoadRef.current = null;
+          return null;
+        }
+      })();
+    }
+    return cvLoadRef.current;
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const cv = await loadOpenCv();
-        await ensureYuNet(cv);
-        cvRef.current = cv;
+    void ensureGallery()
+      .then(() => {
         if (!cancelled) {
-          setEngine("browser");
+          setGalleryReady(true);
         }
-      } catch (err) {
-        if (!cancelled) {
-          setEngine("failed");
-          setError(err instanceof Error ? err.message : "OpenCV.js failed to load");
-        }
-      }
-    })();
-    fetch("/api/health")
-      .then((res) => res.ok)
-      .then((ok) => {
-        if (!cancelled) setBackend(ok);
       })
-      .catch(() => {
-        if (!cancelled) setBackend(false);
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Character gallery failed to load");
+        }
       });
     return () => {
       cancelled = true;
@@ -100,7 +104,7 @@ export default function Page() {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     const cv = cvRef.current;
-    if (!video || !canvas || !cv || video.readyState < 2) {
+    if (!video || !canvas || video.readyState < 2) {
       rafRef.current = requestAnimationFrame(loop);
       return;
     }
@@ -126,43 +130,43 @@ export default function Page() {
     }
     ctx.drawImage(video, 0, 0, width, height);
     const frame = ctx.getImageData(0, 0, width, height);
-    const current = pipelineRef.current;
+    stillRef.current = frame;
+    if (!hasFrameRef.current) {
+      hasFrameRef.current = true;
+      setHasFrame(true);
+    }
     if (inferringRef.current) {
       rafRef.current = requestAnimationFrame(loop);
       return;
     }
     inferringRef.current = true;
+    const current = scanRef.current;
     void (async () => {
       try {
-        const processed = await runBrowserPipeline(cv, frame, current);
-        drawToCanvas(canvas, processed.imageData);
-        const now = performance.now();
-        if (now - lastUiRef.current > 200) {
-          lastUiRef.current = now;
-          setFps(processed.elapsedMs > 0 ? Math.round(1000 / processed.elapsedMs) : 0);
-          setResult({
-            pipeline: current,
-            width,
-            height,
-            elapsed_ms: Math.round(processed.elapsedMs * 10) / 10,
-            model: processed.model,
-            image: "",
-            detections: processed.detections,
-          });
+        if (cv) {
+          const processed = await runBrowserPipeline(cv, frame, current);
+          drawToCanvas(canvas, processed.imageData);
+          const now = performance.now();
+          if (now - lastUiRef.current > 200) {
+            lastUiRef.current = now;
+            setFps(processed.elapsedMs > 0 ? Math.round(1000 / processed.elapsedMs) : 0);
+          }
+        } else {
+          drawToCanvas(canvas, frame);
         }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Live frame failed");
-        stopCamera();
+      } catch {
+        drawToCanvas(canvas, frame);
       } finally {
         inferringRef.current = false;
       }
     })();
     rafRef.current = requestAnimationFrame(loop);
-  }, [stopCamera]);
+  }, []);
 
   async function startCamera() {
     setError("");
-    setResult(null);
+    setMatches(null);
+    stillRef.current = null;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -174,6 +178,9 @@ export default function Page() {
         await videoRef.current.play();
       }
       setLive(true);
+      setHasFrame(false);
+      hasFrameRef.current = false;
+      void loadCv();
       rafRef.current = requestAnimationFrame(loop);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Camera permission denied");
@@ -182,88 +189,122 @@ export default function Page() {
 
   useEffect(() => () => stopCamera(), [stopCamera]);
 
-  const fileLabel = useMemo(() => (file ? file.name : "Drop a PNG, JPEG, or WebP"), [file]);
-
-  async function onSubmit(event: FormEvent) {
-    event.preventDefault();
-    if (live) {
+  async function onPickFile(next: File | null) {
+    if (!next) {
       return;
     }
-    if (!file) {
-      setError("Choose an image first.");
+    stopCamera();
+    setMatches(null);
+    setError("");
+    setFileLabel(next.name);
+    try {
+      const cv = cvRef.current;
+      const input = await fileToImageData(next);
+      stillRef.current = input;
+      hasFrameRef.current = true;
+      setHasFrame(true);
+      const canvas = canvasRef.current;
+      if (canvas && cv) {
+        try {
+          const processed = await runBrowserPipeline(cv, input, scanRef.current);
+          drawToCanvas(canvas, processed.imageData);
+        } catch {
+          drawToCanvas(canvas, input);
+        }
+      } else if (canvas) {
+        drawToCanvas(canvas, input);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not read image");
+    }
+  }
+
+  async function analyze() {
+    const frame = stillRef.current;
+    if (!frame) {
+      setError("Start the camera or upload a photo first.");
       return;
     }
     setBusy(true);
     setError("");
     try {
-      if (pipeline === "objects" && backend) {
+      const cv = cvRef.current;
+      let detections: { label: string; score: number; box: { x: number; y: number; w: number; h: number } }[] = [];
+      if (cv) {
         try {
-          const body = new FormData();
-          body.set("file", file);
-          body.set("pipeline", pipeline);
-          const res = await fetch("/api/v1/process", { method: "POST", body });
-          const data = await res.json();
-          if (res.ok) {
-            setResult(data as ProcessResponse);
-            return;
+          const scanned = await runBrowserPipeline(cv, frame, "objects");
+          detections = scanned.detections;
+          const n = scanned.detections.length;
+          setScanNote(
+            n
+              ? `OpenCV scan: ${n} object${n === 1 ? "" : "s"} (${scanned.detections
+                  .slice(0, 4)
+                  .map((d) => d.label)
+                  .join(", ")})`
+              : "OpenCV scan: no COCO objects — matching on color + silhouette only",
+          );
+          if (!live && canvasRef.current) {
+            drawToCanvas(canvasRef.current, scanned.imageData);
           }
         } catch {
-          // Fall through to in-browser NanoDet when YOLOX is unreachable.
+          setScanNote("OpenCV object scan skipped — matching on color + silhouette");
         }
+      } else {
+        setScanNote("Matching on color + silhouette");
       }
-      const cv = await loadOpenCv();
-      const input = await fileToImageData(file);
-      const processed = await runBrowserPipeline(cv, input, pipeline);
-      setResult({
-        pipeline,
-        width: processed.imageData.width,
-        height: processed.imageData.height,
-        elapsed_ms: Math.round(processed.elapsedMs * 10) / 10,
-        model: processed.model,
-        image: imageDataToUrl(processed.imageData),
-        detections: processed.detections,
-      });
+      const rows = await matchBrainrot(frame, detections);
+      setMatches(rows);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Request failed");
+      setError(err instanceof Error ? err.message : "Analyze failed");
     } finally {
       setBusy(false);
     }
   }
 
+  const top = matches?.[0];
+  const rest = matches?.slice(1, 4);
+  const status = useMemo(() => {
+    if (live) {
+      return engine === "browser" ? "Live scan" : "Live camera";
+    }
+    if (!galleryReady) {
+      return "Loading character gallery";
+    }
+    if (engine === "browser") {
+      return "Ready to match";
+    }
+    if (engine === "failed") {
+      return "Matcher ready (OpenCV overlay off)";
+    }
+    return "Matcher ready";
+  }, [engine, galleryReady, live]);
+
   return (
     <main className="shell">
       <header className="top">
         <div>
-          <p className="kicker">opencv-cloud</p>
-          <h1>Live OpenCV in the Vercel build</h1>
+          <p className="kicker">opencv-cloud · brainrot matcher</p>
+          <h1>Which brainrot character is this?</h1>
           <p className="lede">
-            Webcam and stills run in the browser with OpenCV.js, YuNet, and NanoDet. The Python
-            backend is optional and only used for YOLOX stills when it is reachable.
+            Point a camera or drop a photo. OpenCV scans the frame, then Analyze scores it against
+            17 Italian / Indonesian brainrot mascots.
           </p>
         </div>
-        <div className={`status ${engine === "browser" ? "ok" : engine === "failed" ? "bad" : ""}`}>
-          <strong>
-            {engine === "browser"
-              ? live
-                ? "Live camera"
-                : "Browser OpenCV ready"
-              : engine === "failed"
-                ? "OpenCV.js failed"
-                : "Loading OpenCV.js"}
-          </strong>
-          {backend ? "Python API reachable" : "Vercel-only mode · no container API"}
+        <div className={`status ${galleryReady ? "ok" : ""}`}>
+          <strong>{status}</strong>
+          {galleryReady ? `${BRAINROT_CHARACTERS.length} characters loaded` : "Fetching gallery…"}
+          {live ? <span> · ~{fps} fps</span> : null}
         </div>
       </header>
 
       <div className="grid">
-        <form className="panel" onSubmit={onSubmit}>
+        <section className="panel">
           <h2>Input</h2>
           <div className="live-row">
             <button
               className="run secondary"
               type="button"
               onClick={() => (live ? stopCamera() : startCamera())}
-              disabled={engine !== "browser"}
             >
               {live ? "Stop camera" : "Start live camera"}
             </button>
@@ -274,94 +315,99 @@ export default function Page() {
               accept="image/png,image/jpeg,image/webp,image/bmp"
               hidden
               disabled={live}
-              onChange={(event) => {
-                const next = event.target.files?.[0] ?? null;
-                setFile(next);
-                setResult(null);
-              }}
+              onChange={(event) => void onPickFile(event.target.files?.[0] ?? null)}
             />
-            {live ? "Camera is live" : fileLabel}
+            {live ? "Camera is live — hit Analyze on a pose" : fileLabel}
           </label>
 
-          <div className="pipelines">
-            {PIPELINES.map((item) => (
+          <p className="scan-label">OpenCV scan overlay</p>
+          <div className="scans">
+            {SCANS.map((item) => (
               <label key={item.id}>
                 <input
                   type="radio"
-                  name="pipeline"
+                  name="scan"
                   value={item.id}
-                  checked={pipeline === item.id}
-                  disabled={live && !item.live}
-                  onChange={() => setPipeline(item.id)}
+                  checked={scan === item.id}
+                  onChange={() => {
+                    setScan(item.id);
+                    void loadCv();
+                  }}
                 />
-                <span>
-                  {item.label}
-                  {item.id === "objects"
-                    ? backend
-                      ? " · live NanoDet / still YOLOX"
-                      : " · live NanoDet"
-                    : item.live
-                      ? " · live"
-                      : " · server"}
-                </span>
+                {item.label}
               </label>
             ))}
           </div>
 
-          <button className="run" type="submit" disabled={busy || live || engine !== "browser"}>
-            {busy ? "Running…" : "Run on still image"}
+          <button
+            className="run"
+            type="button"
+            onClick={() => void analyze()}
+            disabled={busy || !hasFrame || !galleryReady}
+          >
+            {busy ? "Analyzing…" : "Analyze match"}
           </button>
           {error ? <p className="error">{error}</p> : null}
-        </form>
+        </section>
 
         <section className="panel">
-          <h2>Result</h2>
+          <h2>Scan</h2>
           <div className="stage">
             <video ref={videoRef} playsInline muted hidden />
-            <canvas ref={canvasRef} className={live ? "show" : "hide"} />
-            {!live && result?.image ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={result.image} alt="Pipeline output" />
-            ) : null}
-            {!live && !result?.image ? <p className="lede">Start the camera or run a still.</p> : null}
+            <canvas ref={canvasRef} className={hasFrame ? "show" : "hide"} />
+            {!hasFrame ? <p className="lede">Start the camera or drop a still.</p> : null}
           </div>
-          {result ? (
-            <p className="meta">
-              <span>
-                {result.width}×{result.height}
-              </span>
-              <span>{result.elapsed_ms} ms</span>
-              {live ? <span>~{fps} fps</span> : null}
-              <span>{result.model ?? "opencv.js"}</span>
-              <span>{result.detections.length} detections</span>
-            </p>
-          ) : null}
-
-          {result && result.detections.length > 0 ? (
-            <table>
-              <thead>
-                <tr>
-                  <th>Label</th>
-                  <th>Score</th>
-                  <th>Box</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.detections.slice(0, 12).map((det, index) => (
-                  <tr key={`${det.label}-${index}`}>
-                    <td>{det.label}</td>
-                    <td>{det.score.toFixed(2)}</td>
-                    <td>
-                      {Math.round(det.box.x)},{Math.round(det.box.y)} {Math.round(det.box.w)}×
-                      {Math.round(det.box.h)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : null}
         </section>
       </div>
+
+      {top ? (
+        <section className="panel match-panel">
+          <h2>Match</h2>
+          <div className="match-hero">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={top.character.image} alt={top.character.name} />
+            <div>
+              <p className="kicker">{top.character.origin}</p>
+              <h3>{top.character.name}</h3>
+              <p className="percent">{top.percent}%</p>
+              <p className="lede">{top.character.blurb}</p>
+              <p className="meta">
+                {top.reasons.map((reason) => (
+                  <span key={reason}>{reason}</span>
+                ))}
+              </p>
+              {scanNote ? <p className="meta">{scanNote}</p> : null}
+            </div>
+          </div>
+          {rest && rest.length > 0 ? (
+            <ol className="runners">
+              {rest.map((row) => (
+                <li key={row.character.id}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={row.character.image} alt="" />
+                  <span>
+                    {row.character.name}
+                    <small>{row.percent}%</small>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          ) : null}
+        </section>
+      ) : null}
+
+      <section className="panel roster">
+        <h2>Roster</h2>
+        <ul className="roster-grid">
+          {BRAINROT_CHARACTERS.map((character) => (
+            <li key={character.id}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={character.image} alt={character.name} />
+              <span>{character.name}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
     </main>
   );
 }

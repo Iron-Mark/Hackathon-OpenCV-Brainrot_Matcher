@@ -2,7 +2,7 @@
 
 A small computer-vision starter: **docs**, **frontend**, **backend**, and **infra**.
 
-The Vercel build runs **live OpenCV in the browser** (webcam + YuNet + NanoDet + filters). The Python backend is optional and only needed for YOLOX object stills.
+The Vercel build runs **live OpenCV in the browser** and can **match a photo or webcam frame to Italian brainrot characters**. The Python backend is optional (YOLOX stills).
 
 Production: [https://opencv-cloud.vercel.app](https://opencv-cloud.vercel.app)
 
@@ -69,7 +69,7 @@ Details: [docs/deploy.md](docs/deploy.md) and [docs/integrations.md](docs/integr
 | [docs/api.md](docs/api.md) | Backend HTTP contract |
 | [docs/models.md](docs/models.md) | Open-weight models and licenses |
 | [docs/integrations.md](docs/integrations.md) | Which models and hosts make the project work |
-| [docs/deploy.md](docs/deploy.md) | Vercel + container backend |
+| [docs/characters.md](docs/characters.md) | Brainrot roster and Analyze matcher |
 
 ## License
 
