@@ -183,6 +183,41 @@ label.file:hover {
   color: var(--text);
 }
 
+.replay {
+  margin-top: 12px;
+  background: var(--accent);
+  color: #111;
+  border: 0;
+  padding: 8px 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.replay:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.runner-play,
+.roster-play {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.roster-play {
+  display: grid;
+  gap: 6px;
+}
+
 .scan-label {
   margin: 14px 0 8px;
   font-size: 11px;
@@ -291,6 +326,10 @@ label.file:hover {
   object-fit: cover;
   border: 1px solid var(--line);
   background: #08090c;
+}
+
+.roster .lede {
+  margin-bottom: 12px;
 }
 
 @media (max-width: 840px) {

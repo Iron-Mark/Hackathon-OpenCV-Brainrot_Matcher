@@ -269,7 +269,7 @@ export default function Page() {
       setMatches(rows);
       const winner = rows[0];
       if (winner) {
-        setSoundPlayed(playMatchComplete(winner.character.name, winner.percent));
+        setSoundPlayed(playMatchComplete(winner.character));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Analyze failed");
@@ -377,7 +377,7 @@ export default function Page() {
               }
             }}
           >
-            {soundOn ? "Sound on · sting + name" : "Sound off"}
+            {soundOn ? "Sound on · character chant" : "Sound off"}
           </button>
           {error ? <p className="error">{error}</p> : null}
         </section>
@@ -409,18 +409,39 @@ export default function Page() {
                 ))}
               </p>
               {scanNote ? <p className="meta">{scanNote}</p> : null}
+              <button
+                className="replay"
+                type="button"
+                data-chant={top.character.id}
+                disabled={!soundOn}
+                onClick={() => {
+                  void unlockMatchAudio().then(() => {
+                    setSoundPlayed(playMatchComplete(top.character));
+                  });
+                }}
+              >
+                Replay {top.character.name}
+              </button>
             </div>
           </div>
           {rest && rest.length > 0 ? (
             <ol className="runners">
               {rest.map((row) => (
                 <li key={row.character.id}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={row.character.image} alt="" />
-                  <span>
-                    {row.character.name}
-                    <small>{row.percent}%</small>
-                  </span>
+                  <button
+                    type="button"
+                    className="runner-play"
+                    onClick={() => {
+                      void unlockMatchAudio().then(() => playMatchComplete(row.character));
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={row.character.image} alt="" />
+                    <span>
+                      {row.character.name}
+                      <small>{row.percent}%</small>
+                    </span>
+                  </button>
                 </li>
               ))}
             </ol>
@@ -430,12 +451,21 @@ export default function Page() {
 
       <section className="panel roster">
         <h2>Roster</h2>
+        <p className="lede">Tap a character to hear its chant.</p>
         <ul className="roster-grid">
           {BRAINROT_CHARACTERS.map((character) => (
             <li key={character.id}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={character.image} alt={character.name} />
-              <span>{character.name}</span>
+              <button
+                type="button"
+                className="roster-play"
+                onClick={() => {
+                  void unlockMatchAudio().then(() => playMatchComplete(character));
+                }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={character.image} alt="" />
+                <span>{character.name}</span>
+              </button>
             </li>
           ))}
         </ul>

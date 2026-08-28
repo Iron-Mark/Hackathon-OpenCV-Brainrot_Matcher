@@ -1,3 +1,15 @@
+export type CharacterTheme = {
+  chant: string;
+  freqs: number[];
+  gap: number;
+  dur: number;
+  wave: OscillatorType;
+  gain: number;
+  rate: number;
+  pitch: number;
+  lang: string;
+};
+
 export type BrainrotCharacter = {
   id: string;
   name: string;
@@ -5,6 +17,7 @@ export type BrainrotCharacter = {
   blurb: string;
   image: string;
   cocoHints: string[];
+  theme: CharacterTheme;
 };
 
 /** Canonical Italian / Indonesian brainrot mascots (Wikimedia Commons stills). */
@@ -16,6 +29,17 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     blurb: "Three-legged blue shark in Nike sneakers. The mascot that started the wave.",
     image: "/models/brainrot/tralalero-tralala",
     cocoHints: ["person"],
+    theme: {
+      chant: "Tralalero Tralala. Tralalero Tralala.",
+      freqs: [220, 277, 330, 440],
+      gap: 0.14,
+      dur: 0.16,
+      wave: "sine",
+      gain: 0.1,
+      rate: 1.02,
+      pitch: 1.08,
+      lang: "it-IT",
+    },
   },
   {
     id: "tung-tung-tung-sahur",
@@ -24,6 +48,17 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     blurb: "Wooden night-patrol spirit with a bat. “Tung tung tung” is the sahur drum.",
     image: "/models/brainrot/tung-tung-tung-sahur",
     cocoHints: ["baseball bat", "person"],
+    theme: {
+      chant: "Tung tung tung sahur. Tung tung tung sahur.",
+      freqs: [98, 98, 98, 147],
+      gap: 0.11,
+      dur: 0.09,
+      wave: "square",
+      gain: 0.08,
+      rate: 1.12,
+      pitch: 0.82,
+      lang: "id-ID",
+    },
   },
   {
     id: "bombardiro-crocodilo",
@@ -32,6 +67,17 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     blurb: "Crocodile-headed twin-prop bomber. Aerial chaos, crocodile grin.",
     image: "/models/brainrot/bombardiro-crocodilo",
     cocoHints: ["airplane"],
+    theme: {
+      chant: "Bombardiro Crocodilo.",
+      freqs: [392, 311, 247, 185],
+      gap: 0.16,
+      dur: 0.22,
+      wave: "sawtooth",
+      gain: 0.07,
+      rate: 0.96,
+      pitch: 0.78,
+      lang: "it-IT",
+    },
   },
   {
     id: "bombombini-gusini",
@@ -40,6 +86,17 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     blurb: "Goose fused with fighter-jet wings. Bombardiro’s loud aerial cousin.",
     image: "/models/brainrot/bombombini-gusini",
     cocoHints: ["bird", "airplane"],
+    theme: {
+      chant: "Bombombini Gusini.",
+      freqs: [349, 415, 349, 523],
+      gap: 0.12,
+      dur: 0.12,
+      wave: "square",
+      gain: 0.08,
+      rate: 1.08,
+      pitch: 1.2,
+      lang: "it-IT",
+    },
   },
   {
     id: "brr-brr-patapim",
@@ -48,6 +105,17 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     blurb: "Proboscis-monkey / tree hybrid. The poetic forest elder of the roster.",
     image: "/models/brainrot/brr-brr-patapim",
     cocoHints: ["potted plant"],
+    theme: {
+      chant: "Brr brr Patapim.",
+      freqs: [110, 123, 146, 164],
+      gap: 0.18,
+      dur: 0.2,
+      wave: "triangle",
+      gain: 0.1,
+      rate: 0.88,
+      pitch: 0.7,
+      lang: "it-IT",
+    },
   },
   {
     id: "lirili-larila",
@@ -56,6 +124,17 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     blurb: "Bipedal cactus-elephant in slip-on sandals. Desert walker, alleged timekeeper.",
     image: "/models/brainrot/lirili-larila",
     cocoHints: ["elephant"],
+    theme: {
+      chant: "Lirilì Larilà. Lirilì Larilà.",
+      freqs: [262, 294, 330, 392],
+      gap: 0.15,
+      dur: 0.14,
+      wave: "triangle",
+      gain: 0.09,
+      rate: 0.98,
+      pitch: 1.05,
+      lang: "it-IT",
+    },
   },
   {
     id: "cappuccino-assassino",
@@ -64,6 +143,17 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     blurb: "Takeaway coffee cup with arms, legs, and dual katanas. Cafe ninja.",
     image: "/models/brainrot/cappuccino-assassino",
     cocoHints: ["cup", "bottle"],
+    theme: {
+      chant: "Cappuccino Assassino.",
+      freqs: [523, 392, 523, 784],
+      gap: 0.08,
+      dur: 0.07,
+      wave: "square",
+      gain: 0.07,
+      rate: 1.14,
+      pitch: 0.9,
+      lang: "it-IT",
+    },
   },
   {
     id: "ballerina-cappuccina",
@@ -72,6 +162,17 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     blurb: "Tutu, pointe shoes, cappuccino-mug head. The pirouette that hit late-night TV.",
     image: "/models/brainrot/ballerina-cappuccina",
     cocoHints: ["person", "cup"],
+    theme: {
+      chant: "Ballerina Cappuccina.",
+      freqs: [523, 659, 784, 1046],
+      gap: 0.13,
+      dur: 0.18,
+      wave: "sine",
+      gain: 0.09,
+      rate: 0.94,
+      pitch: 1.28,
+      lang: "it-IT",
+    },
   },
   {
     id: "chimpanzini-bananini",
@@ -80,6 +181,17 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     blurb: "Chimpanzee with a banana for a body. Tagged “indestructible” in the lore.",
     image: "/models/brainrot/chimpanzini-bananini",
     cocoHints: ["banana", "person"],
+    theme: {
+      chant: "Chimpanzini Bananini.",
+      freqs: [294, 370, 440, 587],
+      gap: 0.11,
+      dur: 0.11,
+      wave: "square",
+      gain: 0.08,
+      rate: 1.1,
+      pitch: 1.15,
+      lang: "it-IT",
+    },
   },
   {
     id: "boneca-ambalabu",
@@ -88,6 +200,17 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     blurb: "Frog fused to a tire, walking on human legs. Beach underdog.",
     image: "/models/brainrot/boneca-ambalabu",
     cocoHints: ["car"],
+    theme: {
+      chant: "Boneca Ambalabu.",
+      freqs: [196, 233, 175, 262],
+      gap: 0.14,
+      dur: 0.13,
+      wave: "triangle",
+      gain: 0.09,
+      rate: 1.0,
+      pitch: 0.92,
+      lang: "id-ID",
+    },
   },
   {
     id: "trippi-troppi",
@@ -96,6 +219,17 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     blurb: "Often a cat with a shrimp body (sometimes a fish-headed bear). Sea gremlin.",
     image: "/models/brainrot/trippi-troppi",
     cocoHints: ["cat"],
+    theme: {
+      chant: "Trippi Troppi. Trippi Troppi.",
+      freqs: [311, 415, 277, 466],
+      gap: 0.1,
+      dur: 0.1,
+      wave: "sawtooth",
+      gain: 0.06,
+      rate: 1.16,
+      pitch: 1.25,
+      lang: "it-IT",
+    },
   },
   {
     id: "frigo-camelo",
@@ -104,6 +238,17 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     blurb: "Camel built around a refrigerator. Cold storage, desert stance.",
     image: "/models/brainrot/frigo-camelo",
     cocoHints: ["refrigerator"],
+    theme: {
+      chant: "Frigo Camelo.",
+      freqs: [174, 196, 220, 246],
+      gap: 0.2,
+      dur: 0.24,
+      wave: "sine",
+      gain: 0.1,
+      rate: 0.86,
+      pitch: 0.68,
+      lang: "it-IT",
+    },
   },
   {
     id: "giraffa-celeste",
@@ -112,6 +257,17 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     blurb: "Sky-blue giraffe hybrid. Long neck, pastel brainrot paladin.",
     image: "/models/brainrot/giraffa-celeste",
     cocoHints: ["giraffe"],
+    theme: {
+      chant: "Giraffa Celeste.",
+      freqs: [392, 494, 587, 784],
+      gap: 0.17,
+      dur: 0.26,
+      wave: "sine",
+      gain: 0.09,
+      rate: 0.9,
+      pitch: 1.18,
+      lang: "it-IT",
+    },
   },
   {
     id: "udin-din-din-dun",
@@ -120,6 +276,17 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     blurb: "Round absurdist mascot from the same TTS nursery-rhyme wave.",
     image: "/models/brainrot/udin-din-din-dun",
     cocoHints: [],
+    theme: {
+      chant: "Udin din din dun. Udin din din dun.",
+      freqs: [262, 262, 294, 330],
+      gap: 0.12,
+      dur: 0.1,
+      wave: "triangle",
+      gain: 0.09,
+      rate: 1.06,
+      pitch: 1.1,
+      lang: "it-IT",
+    },
   },
   {
     id: "ecco-cavallo-virtuoso",
@@ -128,6 +295,17 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     blurb: "Virtuoso horse of the roster. Gallop, drama, fake-Italian opera energy.",
     image: "/models/brainrot/ecco-cavallo-virtuoso",
     cocoHints: ["horse"],
+    theme: {
+      chant: "Ecco Cavallo Virtuoso.",
+      freqs: [196, 247, 330, 392],
+      gap: 0.16,
+      dur: 0.2,
+      wave: "sawtooth",
+      gain: 0.07,
+      rate: 0.84,
+      pitch: 0.95,
+      lang: "it-IT",
+    },
   },
   {
     id: "frulli-frulla",
@@ -136,6 +314,17 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     blurb: "Soft-edged hybrid from the mid-wave character mill.",
     image: "/models/brainrot/frulli-frulla",
     cocoHints: [],
+    theme: {
+      chant: "Frulli Frulla. Frulli Frulla.",
+      freqs: [349, 392, 440, 523],
+      gap: 0.14,
+      dur: 0.16,
+      wave: "sine",
+      gain: 0.09,
+      rate: 1.0,
+      pitch: 1.12,
+      lang: "it-IT",
+    },
   },
   {
     id: "merluzzini-marraquetini",
@@ -144,5 +333,16 @@ export const BRAINROT_CHARACTERS: BrainrotCharacter[] = [
     blurb: "Hake / racket mash-up. Sports-fish chaos in one silhouette.",
     image: "/models/brainrot/merluzzini-marraquetini",
     cocoHints: ["tennis racket", "sports ball"],
+    theme: {
+      chant: "Merluzzini Marraquetini.",
+      freqs: [247, 330, 247, 392],
+      gap: 0.11,
+      dur: 0.1,
+      wave: "square",
+      gain: 0.08,
+      rate: 1.12,
+      pitch: 1.0,
+      lang: "it-IT",
+    },
   },
 ];
