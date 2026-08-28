@@ -2,17 +2,29 @@
 
 A small computer-vision starter: **docs**, **frontend**, **backend**, and **infra**.
 
-Upload an image, run an OpenCV pipeline, get boxes and a rendered result. Detection uses open-weight models from the [OpenCV Zoo](https://github.com/opencv/opencv_zoo) (YuNet, YOLOX). Classic filters (edges, grayscale, blur) need no weights.
+The Vercel build runs **live OpenCV in the browser** (webcam + YuNet + filters). The Python backend is optional and only needed for YOLOX object detection.
+
+Production: [https://opencv-cloud.vercel.app](https://opencv-cloud.vercel.app)
 
 ```
 opencv-cloud/
 ├── docs/        architecture, API, models, deploy
-├── frontend/    Next.js app (Vercel)
-├── backend/     FastAPI + OpenCV DNN
+├── frontend/    Next.js + OpenCV.js (Vercel)
+├── backend/     FastAPI + OpenCV DNN (optional)
 └── infra/       Docker Compose + Dockerfiles
 ```
 
-## Quick start (Docker)
+## Quick start (frontend only)
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000). Use **Start live camera** or upload a still. No Python process is required for faces / edges / grayscale / blur.
+
+## Quick start (Docker, including YOLOX)
 
 ```bash
 docker compose -f infra/docker-compose.yml up --build
@@ -43,8 +55,8 @@ The Next.js app proxies `/api/*` to `API_URL` (default `http://127.0.0.1:8000`).
 
 ## Cloud
 
-- **Frontend** → Vercel, root directory `frontend`, env `API_URL` pointing at the backend.
-- **Backend** → any container host (Cloud Run, Fly, Railway). Image is `infra/Dockerfile.backend`.
+- **Live app** → Vercel, root directory `frontend` (OpenCV.js + YuNet, no backend required).
+- **Optional API** → container from `infra/Dockerfile.backend`, then set `API_URL` for YOLOX.
 
 Details: [docs/deploy.md](docs/deploy.md).
 

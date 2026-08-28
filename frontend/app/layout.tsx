@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "opencv-cloud",
-  description: "OpenCV starter with open-weight Zoo models on a split frontend / backend.",
+  description: "Live OpenCV.js + YuNet in the browser, deployed on Vercel.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
