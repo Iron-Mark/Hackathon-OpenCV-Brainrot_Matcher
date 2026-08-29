@@ -1,6 +1,3 @@
-import { createRequire } from "node:module";
-
-// Lightweight sanity check of costume color families without a browser.
 const families = {
   "tralalero-tralala": ["blue"],
   "giraffa-celeste": ["blue", "yellow"],
@@ -68,5 +65,4 @@ if (brownOnBlue >= blueOnBlue) failed += 1;
 if (failed) {
   process.exit(1);
 }
-createRequire(import.meta.url);
 console.log("look family tests passed");

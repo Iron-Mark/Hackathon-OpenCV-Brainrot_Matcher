@@ -1,6 +1,8 @@
 Stills in this folder are downloaded from Wikimedia Commons (PD-algorithm / AI-generated
 meme stills associated with Italian and Indonesian “brainrot” characters). They are
-resized to ~512px JPEG for the in-browser matcher.
+resized to ~256px JPEG for the in-browser matcher when present. Production also
+serves Commons `Special:FilePath` as a fallback. Fingerprints are committed in
+`frontend/public/assets/gallery-feat.json`.
 
 | Local file | Commons file | Character |
 | --- | --- | --- |
