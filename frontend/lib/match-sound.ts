@@ -41,13 +41,22 @@ export function stopMatchAudio() {
   window.speechSynthesis?.cancel();
 }
 
-/** Call from a user click so autoplay policy allows the later sting. */
+/** Call from a user click so autoplay policy allows the later sting. Never block Analyze. */
 export async function unlockMatchAudio(): Promise<void> {
-  const ac = audio();
-  if (ac?.state === "suspended") {
-    await ac.resume();
+  try {
+    const ac = audio();
+    if (ac?.state === "suspended") {
+      await Promise.race([
+        ac.resume(),
+        new Promise<void>((resolve) => {
+          window.setTimeout(resolve, 250);
+        }),
+      ]);
+    }
+    window.speechSynthesis?.getVoices();
+  } catch {
+    /* Audio is optional — a hung or blocked resume must not freeze Analyze. */
   }
-  window.speechSynthesis?.getVoices();
 }
 
 function tone(
@@ -87,14 +96,47 @@ export function playCharacterSting(character: BrainrotCharacter): boolean {
   return true;
 }
 
+function listVoices(): SpeechSynthesisVoice[] {
+  return window.speechSynthesis?.getVoices() ?? [];
+}
+
+function voiceScore(voice: SpeechSynthesisVoice, lang: string): number {
+  const want = lang.toLowerCase();
+  const prefix = want.slice(0, 2);
+  const vlang = voice.lang.toLowerCase();
+  const name = voice.name.toLowerCase();
+  if (vlang === want || vlang.replace("_", "-") === want) {
+    return 100;
+  }
+  if (vlang.startsWith(prefix)) {
+    return 80;
+  }
+  if (prefix === "it" && /italian|italiano/.test(name)) {
+    return 70;
+  }
+  if (prefix === "id" && /indonesia/.test(name)) {
+    return 70;
+  }
+  return 0;
+}
+
 function pickVoice(lang: string): SpeechSynthesisVoice | undefined {
-  const voices = window.speechSynthesis?.getVoices() ?? [];
-  const prefix = lang.slice(0, 2).toLowerCase();
-  return (
-    voices.find((voice) => voice.lang.toLowerCase().startsWith(prefix)) ??
-    voices.find((voice) => voice.lang.toLowerCase().startsWith("it")) ??
-    voices.find((voice) => /italian/i.test(voice.name))
-  );
+  return listVoices()
+    .map((voice) => ({ voice, score: voiceScore(voice, lang) }))
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score)[0]?.voice;
+}
+
+function waitForVoices(): Promise<SpeechSynthesisVoice[]> {
+  const ready = listVoices();
+  if (ready.length > 0) {
+    return Promise.resolve(ready);
+  }
+  return new Promise((resolve) => {
+    const finish = () => resolve(listVoices());
+    window.speechSynthesis?.addEventListener("voiceschanged", finish, { once: true });
+    window.setTimeout(finish, 400);
+  });
 }
 
 export function announceCharacter(character: BrainrotCharacter) {
@@ -102,19 +144,24 @@ export function announceCharacter(character: BrainrotCharacter) {
     return;
   }
   window.speechSynthesis.cancel();
-  const utter = new SpeechSynthesisUtterance(character.theme.chant);
-  utter.lang = character.theme.lang;
-  utter.rate = character.theme.rate;
-  utter.pitch = character.theme.pitch;
-  const voice = pickVoice(character.theme.lang);
-  if (voice) {
-    utter.voice = voice;
-  }
   const delay = Math.round((character.theme.freqs.length * character.theme.gap + 0.12) * 1000);
   window.setTimeout(() => {
-    if (soundEnabled()) {
+    void (async () => {
+      if (!soundEnabled()) {
+        return;
+      }
+      await waitForVoices();
+      const voice = pickVoice(character.theme.lang);
+      if (!voice) {
+        return;
+      }
+      const utter = new SpeechSynthesisUtterance(character.theme.chant);
+      utter.lang = voice.lang || character.theme.lang;
+      utter.rate = character.theme.rate;
+      utter.pitch = character.theme.pitch;
+      utter.voice = voice;
       window.speechSynthesis.speak(utter);
-    }
+    })();
   }, delay);
 }
 

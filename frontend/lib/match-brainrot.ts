@@ -387,8 +387,27 @@ function toPercent(raw: number, best: number, second: number, isWinner: boolean)
   return Math.max(0, Math.min(99, Math.round(pct)));
 }
 
+function downscaleForMatch(imageData: ImageData, maxEdge = 384): ImageData {
+  const scale = Math.min(1, maxEdge / imageData.width, maxEdge / imageData.height);
+  if (scale >= 0.999) {
+    return imageData;
+  }
+  return resizeImageData(
+    imageData,
+    Math.max(8, Math.round(imageData.width * scale)),
+    Math.max(8, Math.round(imageData.height * scale)),
+  );
+}
+
 async function imageDataFromUrl(url: string): Promise<ImageData> {
-  const res = await fetch(url);
+  const ctrl = new AbortController();
+  const timer = window.setTimeout(() => ctrl.abort(), 8000);
+  let res: Response;
+  try {
+    res = await fetch(url, { signal: ctrl.signal, cache: "force-cache" });
+  } finally {
+    window.clearTimeout(timer);
+  }
   if (!res.ok) {
     throw new Error(`Could not load ${url}`);
   }
@@ -430,7 +449,10 @@ export async function ensureGallery(): Promise<void> {
         throw new Error("Character gallery failed to load");
       }
       return ready;
-    })();
+    })().catch((err: unknown) => {
+      galleryPromise = null;
+      throw err;
+    });
   }
   gallery = await galleryPromise;
 }
@@ -443,7 +465,7 @@ export async function matchBrainrot(
   if (!gallery) {
     throw new Error("Gallery failed to load");
   }
-  const subject = cropToSubject(imageData, detections);
+  const subject = cropToSubject(downscaleForMatch(imageData), detections);
   const query = extract(subject);
   const frameArea = imageData.width * imageData.height;
   const rows: MatchRow[] = gallery.map(({ character, feat }) => {
