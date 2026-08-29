@@ -168,6 +168,31 @@ label.file:hover {
   margin-bottom: 12px;
 }
 
+.run.quiet {
+  margin-top: 8px;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+
+.hint {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.weak {
+  margin: 8px 0 0;
+  color: #f0c36a;
+  font-size: 13px;
+}
+
+.why span {
+  display: inline-block;
+  margin-right: 10px;
+}
+
 .sound-toggle {
   width: 100%;
   margin-top: 8px;

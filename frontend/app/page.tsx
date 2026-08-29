@@ -2,14 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BRAINROT_CHARACTERS } from "../lib/characters";
+import { warmupClip } from "../lib/clip-match";
+import { detectForMatch, detectObjectsOverlay } from "../lib/detect-match";
 import { generateHybrid } from "../lib/hybrid";
-import { ensureGallery, matchBrainrot, type MatchRow } from "../lib/match-brainrot";
+import { warmupIsolation } from "../lib/isolate";
+import { ensureGallery, matchBrainrot, rerankWithVision, type MatchRow } from "../lib/match-brainrot";
+import { generateMashup } from "../lib/mashup";
 import {
   playMatchComplete,
   setSoundEnabled,
   soundEnabled,
   unlockMatchAudio,
 } from "../lib/match-sound";
+import { ensureNanoDet } from "../lib/nanodet";
 import {
   type PipelineId,
   drawToCanvas,
@@ -18,6 +23,8 @@ import {
   preloadOpenCv,
   runBrowserPipeline,
 } from "../lib/opencv-browser";
+import { paintDetections } from "../lib/overlay";
+import type { Detection } from "../lib/types";
 
 const SCANS: { id: PipelineId; label: string }[] = [
   { id: "faces", label: "Faces" },
@@ -33,6 +40,7 @@ export default function Page() {
   const [scan, setScan] = useState<PipelineId>("faces");
   const [fileLabel, setFileLabel] = useState("Drop a PNG, JPEG, or WebP");
   const [busy, setBusy] = useState(false);
+  const [visionBusy, setVisionBusy] = useState(false);
   const [live, setLive] = useState(false);
   const [hasFrame, setHasFrame] = useState(false);
   const [fps, setFps] = useState(0);
@@ -43,17 +51,20 @@ export default function Page() {
   const [soundPlayed, setSoundPlayed] = useState(false);
   const [hybridUrl, setHybridUrl] = useState("");
   const [hybridName, setHybridName] = useState("");
+  const [hybridKind, setHybridKind] = useState<"sticker" | "ai" | "">("");
   const [hybridBusy, setHybridBusy] = useState(false);
   const [hybridError, setHybridError] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scratchRef = useRef<HTMLCanvasElement | null>(null);
   const stillRef = useRef<ImageData | null>(null);
+  const detectionsRef = useRef<Detection[]>([]);
   const hasFrameRef = useRef(false);
   const cvReadyRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef(0);
   const lastUiRef = useRef(0);
+  const lastObjectsRef = useRef(0);
   const inferringRef = useRef(false);
   const scanRef = useRef(scan);
   scanRef.current = scan;
@@ -85,6 +96,9 @@ export default function Page() {
         if (!cancelled) {
           setGalleryReady(true);
         }
+        warmupIsolation();
+        warmupClip();
+        void ensureNanoDet().catch(() => undefined);
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -146,9 +160,26 @@ export default function Page() {
     const current = scanRef.current;
     void (async () => {
       try {
-        if (isOpenCvReady() && current !== "objects") {
+        if (current === "objects") {
+          const now = performance.now();
+          if (now - lastObjectsRef.current > 380) {
+            lastObjectsRef.current = now;
+            const objects = await detectObjectsOverlay(frame);
+            detectionsRef.current = objects;
+            paintDetections(canvas, frame, objects);
+            if (now - lastUiRef.current > 200) {
+              lastUiRef.current = now;
+              setFps(Math.round(1000 / Math.max(1, now - lastObjectsRef.current + 380)));
+            }
+          } else {
+            paintDetections(canvas, frame, detectionsRef.current);
+          }
+        } else if (isOpenCvReady()) {
           const processed = await runBrowserPipeline(frame, current);
           drawToCanvas(canvas, processed.imageData);
+          if (current === "faces") {
+            detectionsRef.current = processed.detections;
+          }
           const now = performance.now();
           if (now - lastUiRef.current > 200) {
             lastUiRef.current = now;
@@ -171,8 +202,10 @@ export default function Page() {
     setMatches(null);
     setHybridUrl("");
     setHybridName("");
+    setHybridKind("");
     setHybridError("");
     stillRef.current = null;
+    detectionsRef.current = [];
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -202,6 +235,7 @@ export default function Page() {
     setMatches(null);
     setHybridUrl("");
     setHybridName("");
+    setHybridKind("");
     setHybridError("");
     setError("");
     setFileLabel(next.name);
@@ -211,10 +245,17 @@ export default function Page() {
       hasFrameRef.current = true;
       setHasFrame(true);
       const canvas = canvasRef.current;
-      if (canvas && isOpenCvReady() && scanRef.current !== "objects") {
+      if (canvas && scanRef.current === "objects") {
+        const objects = await detectObjectsOverlay(input);
+        detectionsRef.current = objects;
+        paintDetections(canvas, input, objects);
+      } else if (canvas && isOpenCvReady() && scanRef.current !== "objects") {
         try {
           const processed = await runBrowserPipeline(input, scanRef.current);
           drawToCanvas(canvas, processed.imageData);
+          if (scanRef.current === "faces") {
+            detectionsRef.current = processed.detections;
+          }
         } catch {
           drawToCanvas(canvas, input);
         }
@@ -236,15 +277,23 @@ export default function Page() {
     setError("");
     setHybridUrl("");
     setHybridName("");
+    setHybridKind("");
     setHybridError("");
-    setScanNote("Matching your look, colors, and vibe to the roster");
+    setScanNote("On-device match: clothes, pose zones, silhouette. No AI credits.");
     void unlockMatchAudio();
     let winner: MatchRow | undefined;
     try {
+      const detections = await Promise.race([
+        detectForMatch(frame),
+        new Promise<Detection[]>((resolve) => {
+          window.setTimeout(() => resolve([]), 6000);
+        }),
+      ]);
+      detectionsRef.current = detections;
       const rows = await Promise.race([
-        matchBrainrot(frame, []),
+        matchBrainrot(frame, detections),
         new Promise<never>((_, reject) => {
-          window.setTimeout(() => reject(new Error("Match timed out. Try Analyze again.")), 22000);
+          window.setTimeout(() => reject(new Error("Match timed out. Try Analyze again.")), 18000);
         }),
       ]);
       setMatches(rows);
@@ -259,7 +308,49 @@ export default function Page() {
     }
   }
 
-  async function makeHybrid(id: string) {
+  async function askAi() {
+    const frame = stillRef.current;
+    if (!frame || !matches) {
+      setError("Analyze a photo first, then ask AI to rerank.");
+      return;
+    }
+    setVisionBusy(true);
+    setError("");
+    setScanNote("Asking AI to rerank — uses AI Gateway credits and is rate limited.");
+    try {
+      const rows = await rerankWithVision(frame, matches);
+      setMatches(rows);
+      if (rows[0]) {
+        setSoundPlayed(playMatchComplete(rows[0].character));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "AI rerank failed");
+    } finally {
+      setVisionBusy(false);
+    }
+  }
+
+  async function makeSticker(id: string) {
+    const frame = stillRef.current;
+    if (!frame) {
+      setHybridError("Start the camera or upload a photo first.");
+      return;
+    }
+    setHybridBusy(true);
+    setHybridError("");
+    try {
+      const result = await generateMashup(frame, id, detectionsRef.current);
+      setHybridUrl(result.image);
+      setHybridName(result.name);
+      setHybridKind("sticker");
+    } catch (err) {
+      setHybridError(err instanceof Error ? err.message : "Sticker mashup failed");
+    } finally {
+      setHybridBusy(false);
+    }
+  }
+
+  async function brewPaid(id: string) {
     const frame = stillRef.current;
     if (!frame) {
       setHybridError("Start the camera or upload a photo first.");
@@ -271,8 +362,9 @@ export default function Page() {
       const result = await generateHybrid(frame, id);
       setHybridUrl(result.image);
       setHybridName(result.name);
+      setHybridKind("ai");
     } catch (err) {
-      setHybridError(err instanceof Error ? err.message : "Hybrid image failed");
+      setHybridError(err instanceof Error ? err.message : "AI brew failed");
     } finally {
       setHybridBusy(false);
     }
@@ -280,6 +372,7 @@ export default function Page() {
 
   const top = matches?.[0];
   const rest = matches?.slice(1, 4);
+  const weak = Boolean(top?.reasons.some((reason) => /weak vibe|not a strong lock/i.test(reason)));
   const status = useMemo(() => {
     if (live) {
       return engine === "browser" ? "Live scan" : "Live camera";
@@ -304,7 +397,7 @@ export default function Page() {
           <h1>Which brainrot character is this?</h1>
           <p className="lede">
             Point a camera or drop a photo. Analyze matches clothes, hair, and vibe to the
-            costume — not your face — then you can brew a hybrid image of you as that mascot.
+            costume — not your face — then save a free on-device sticker of you as that mascot.
           </p>
         </div>
         <div className={`status ${galleryReady ? "ok" : ""}`}>
@@ -348,7 +441,11 @@ export default function Page() {
                   checked={scan === item.id}
                   onChange={() => {
                     setScan(item.id);
-                    void loadCv();
+                    if (item.id !== "objects") {
+                      void loadCv();
+                    } else {
+                      void ensureNanoDet().catch(() => undefined);
+                    }
                   }}
                 />
                 {item.label}
@@ -365,6 +462,17 @@ export default function Page() {
             {busy ? "Analyzing…" : "Analyze match"}
           </button>
           <button
+            className="run quiet"
+            type="button"
+            onClick={() => void askAi()}
+            disabled={visionBusy || busy || !matches}
+          >
+            {visionBusy ? "Asking AI…" : "Ask AI to rerank"}
+          </button>
+          <p className="hint">
+            Analyze is free and on-device. AI rerank uses your Gateway credits and is rate limited.
+          </p>
+          <button
             className="sound-toggle"
             type="button"
             aria-pressed={soundOn}
@@ -377,7 +485,7 @@ export default function Page() {
               }
             }}
           >
-            {soundOn ? "Sound on · Italian chant" : "Sound off"}
+            {soundOn ? "Sound on · sting + Italian chant" : "Sound off"}
           </button>
           {error ? <p className="error">{error}</p> : null}
         </section>
@@ -393,7 +501,7 @@ export default function Page() {
       </div>
 
       {top ? (
-        <section className="panel match-panel" data-sound={soundOn ? "on" : "off"}>
+        <section className="panel match-panel" data-sound={soundOn ? "on" : "off"} data-weak={weak ? "yes" : "no"}>
           <h2>Match</h2>
           <div className="match-hero">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -403,7 +511,10 @@ export default function Page() {
               <h3>{top.character.name}</h3>
               <p className="percent">{top.percent}%</p>
               <p className="lede">{top.character.blurb}</p>
-              <p className="meta">
+              {weak ? (
+                <p className="weak">Closest vibe in the roster — not a confident costume lock.</p>
+              ) : null}
+              <p className="meta why">
                 {top.reasons.map((reason) => (
                   <span key={reason}>{reason}</span>
                 ))}
@@ -423,12 +534,20 @@ export default function Page() {
                   Replay {top.character.name}
                 </button>
                 <button
+                  className="replay"
+                  type="button"
+                  disabled={hybridBusy || !hasFrame}
+                  onClick={() => void makeSticker(top.character.id)}
+                >
+                  {hybridBusy && hybridKind !== "ai" ? "Making sticker…" : `Free sticker · ${top.character.name}`}
+                </button>
+                <button
                   className="replay secondary"
                   type="button"
                   disabled={hybridBusy || !hasFrame}
-                  onClick={() => void makeHybrid(top.character.id)}
+                  onClick={() => void brewPaid(top.character.id)}
                 >
-                  {hybridBusy ? "Brewing hybrid…" : `Generate hybrid · ${top.character.name}`}
+                  {hybridBusy && hybridKind === "ai" ? "Brewing…" : "Brew AI hybrid (credits)"}
                 </button>
               </div>
             </div>
@@ -459,11 +578,13 @@ export default function Page() {
           {hybridError ? <p className="error">{hybridError}</p> : null}
           {hybridUrl ? (
             <div className="hybrid">
-              <p className="kicker">Hybrid · you as {hybridName}</p>
+              <p className="kicker">
+                {hybridKind === "ai" ? "AI brew" : "Free sticker"} · you as {hybridName}
+              </p>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={hybridUrl} alt={`${hybridName} hybrid`} />
-              <a className="download" href={hybridUrl} download={`${hybridName || "brainrot"}-hybrid.png`}>
-                Download hybrid
+              <img src={hybridUrl} alt={`${hybridName} mashup`} />
+              <a className="download" href={hybridUrl} download={`${hybridName || "brainrot"}-mashup.png`}>
+                Download mashup
               </a>
             </div>
           ) : null}
@@ -472,7 +593,7 @@ export default function Page() {
 
       <section className="panel roster">
         <h2>Roster</h2>
-        <p className="lede">Tap a character to hear the original Italian chant.</p>
+        <p className="lede">Tap a character to hear the sting and original Italian chant.</p>
         <ul className="roster-grid">
           {BRAINROT_CHARACTERS.map((character) => (
             <li key={character.id}>
