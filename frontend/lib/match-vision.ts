@@ -1,3 +1,4 @@
+import { aiTicket } from "./ai-ticket";
 import { imageDataToUrl } from "./opencv-browser";
 
 export type VisionMatch = {
@@ -41,6 +42,7 @@ function jpegForVision(imageData: ImageData): string {
 
 export async function matchWithVision(imageData: ImageData): Promise<VisionMatch | null> {
   try {
+    const ticket = await aiTicket();
     const base64 = jpegForVision(imageData);
     const ctrl = new AbortController();
     const timer = window.setTimeout(() => ctrl.abort(), 14000);
@@ -48,7 +50,7 @@ export async function matchWithVision(imageData: ImageData): Promise<VisionMatch
       fetch("/models/vision-match", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ image: base64 }),
+        body: JSON.stringify({ image: base64, ticket }),
         signal: ctrl.signal,
       }),
       timeout(14000, null),
