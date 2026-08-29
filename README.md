@@ -1,13 +1,13 @@
 # brainrot-matcher
 
-Point a camera or drop a photo. OpenCV scans the frame, then **Analyze match** scores it against 17 Italian / Indonesian brainrot mascots and plays that character’s chant.
+Point a camera or drop a photo. **Analyze match** scores clothes and vibe against 17 Italian / Indonesian brainrot mascots on-device (no AI credits), then you can save a free sticker mashup or opt into a paid AI brew.
 
 Live app: [https://opencv-cloud.vercel.app](https://opencv-cloud.vercel.app)
 
 ```
 brainrot-matcher/
 ├── docs/        architecture, API, models, deploy, character roster
-├── frontend/    Next.js matcher (Vercel): OpenCV.js, NanoDet, chants
+├── frontend/    Next.js matcher (Vercel): OpenCV.js, NanoDet, local score, chants
 ├── backend/     FastAPI + OpenCV DNN (optional YOLOX stills)
 └── infra/       Docker Compose + Dockerfiles
 ```
@@ -15,8 +15,10 @@ brainrot-matcher/
 ## What it does
 
 - Live camera or image upload
-- **Analyze match** → percentage + top three runners-up
-- Per-character sting + TTS chant, with **Replay** on the result card
+- **Analyze match** → on-device percentage + runners-up (NanoDet crop, pose zones, pHash / families / CLIP blend)
+- **Ask AI to rerank** → optional, ticketed, rate limited
+- Free on-device sticker, or labeled **Brew AI hybrid** (Gateway credits)
+- Per-character sting + Italian chant
 - Optional OpenCV overlays: faces, objects, edges, gray, blur
 
 This is closest-vibe matching, not identity verification.
@@ -30,6 +32,11 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000). No Python process is required for matching.
+
+```bash
+npm run eval:looks
+npm run eval:match
+```
 
 ## Cloud
 

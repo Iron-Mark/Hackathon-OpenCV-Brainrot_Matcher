@@ -2,7 +2,20 @@
 
 Base URL: the backend origin (`http://127.0.0.1:8000` locally). Through the frontend, the same paths are available under `/api` when `API_URL` is set.
 
-The Vercel UI does **not** need this API for live vision. Faces and objects run in the browser (YuNet / NanoDet). This contract is for the optional YOLOX container.
+The Vercel UI does **not** need this API for live vision or Analyze. Faces, objects, and default matching run in the browser (YuNet / NanoDet / local score). This contract is for the optional YOLOX container.
+
+Frontend-only routes live under `/models/*` (never `/api/*`):
+
+| Route | Role |
+| --- | --- |
+| `GET /models/ticket` | HMAC session ticket for paid AI |
+| `POST /models/vision-match` | Optional Gemini rerank (opt-in, rate limited) |
+| `POST /models/hybrid` | Optional paid AI brew (rate limited) |
+| `GET /models/brainrot/[id]` | Character still |
+| `GET /models/chant/[id]` | Italian chant |
+| `GET /models/yunet` / `GET /models/nanodet` | Open-weight ONNX |
+
+Bare curl to the AI routes is rejected. Analyze and the free sticker do not call them.
 
 ## `GET /health`
 
