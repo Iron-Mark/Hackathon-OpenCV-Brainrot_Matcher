@@ -98,6 +98,29 @@ export async function unlockMatchAudio(): Promise<void> {
   }
 }
 
+function playThemeSting(character: BrainrotCharacter): number {
+  const ac = audio();
+  if (!ac) {
+    return 0;
+  }
+  const theme = character.theme;
+  let t = ac.currentTime + 0.02;
+  for (const freq of theme.freqs) {
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.type = theme.wave;
+    osc.frequency.setValueAtTime(freq, t);
+    gain.gain.setValueAtTime(Math.max(0.02, theme.gain), t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + theme.dur);
+    osc.connect(gain);
+    gain.connect(ac.destination);
+    osc.start(t);
+    osc.stop(t + theme.dur + 0.03);
+    t += theme.gap;
+  }
+  return Math.max(120, (t - ac.currentTime) * 1000);
+}
+
 function listVoices(): SpeechSynthesisVoice[] {
   return window.speechSynthesis?.getVoices() ?? [];
 }
@@ -158,6 +181,9 @@ export function playMatchComplete(character: BrainrotCharacter): boolean {
     return false;
   }
   stopMatchAudio();
-  void playItalianChant(character);
+  const wait = playThemeSting(character);
+  window.setTimeout(() => {
+    void playItalianChant(character);
+  }, Math.min(520, wait));
   return true;
 }
