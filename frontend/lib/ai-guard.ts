@@ -123,6 +123,21 @@ export function guardJson(denied: GuardErr): Response {
   return Response.json({ error: denied.error }, { status: denied.status, headers });
 }
 
+function parseCount(raw: unknown): number {
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return raw;
+  }
+  if (typeof raw === "string") {
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (raw && typeof raw === "object") {
+    const n = Number((raw as { n?: unknown }).n);
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+}
+
 function memoryIncr(key: string, ttlSec: number): number {
   const now = Date.now();
   const cur = memory.get(key);
@@ -134,38 +149,48 @@ function memoryIncr(key: string, ttlSec: number): number {
   return cur.n;
 }
 
+async function runtimeCache() {
+  const { getCache } = await import("@vercel/functions");
+  return getCache({ namespace: "ai-guard" });
+}
+
 async function incr(key: string, ttlSec: number): Promise<{ n: number; cached: boolean }> {
+  const mem = memoryIncr(key, ttlSec);
   try {
-    const { getCache } = await import("@vercel/functions");
-    const cache = getCache({ namespace: "ai-guard" });
-    const raw = await cache.get(key);
-    const n = (typeof raw === "number" ? raw : Number(raw) || 0) + 1;
-    await cache.set(key, n, { ttl: ttlSec, tags: ["ai-guard", key], name: key });
+    const cache = await runtimeCache();
+    const n = Math.max(mem, parseCount(await cache.get(key)) + 1);
+    memory.set(key, { n, resetAt: Date.now() + ttlSec * 1000 });
+    await cache.set(key, { n }, { ttl: ttlSec, tags: ["ai-guard"], name: key.slice(0, 80) });
     return { n, cached: true };
   } catch {
-    return { n: memoryIncr(key, ttlSec), cached: false };
+    return { n: mem, cached: false };
   }
 }
 
 async function lastSeen(key: string): Promise<number> {
+  const mem = memory.get(key);
+  if (mem && mem.resetAt > Date.now() && mem.n > 0) {
+    return mem.n;
+  }
   try {
-    const { getCache } = await import("@vercel/functions");
-    const cache = getCache({ namespace: "ai-guard" });
-    const raw = await cache.get(key);
-    return typeof raw === "number" ? raw : Number(raw) || 0;
+    const cache = await runtimeCache();
+    const n = parseCount(await cache.get(key));
+    if (n > 0) {
+      memory.set(key, { n, resetAt: Date.now() + 60_000 });
+    }
+    return n;
   } catch {
-    const cur = memory.get(key);
-    return cur && cur.resetAt > Date.now() ? cur.n : 0;
+    return 0;
   }
 }
 
 async function stamp(key: string, value: number, ttlSec: number): Promise<void> {
+  memory.set(key, { n: value, resetAt: Date.now() + ttlSec * 1000 });
   try {
-    const { getCache } = await import("@vercel/functions");
-    const cache = getCache({ namespace: "ai-guard" });
-    await cache.set(key, value, { ttl: ttlSec, tags: ["ai-guard", key], name: key });
+    const cache = await runtimeCache();
+    await cache.set(key, { n: value }, { ttl: ttlSec, tags: ["ai-guard"], name: key.slice(0, 80) });
   } catch {
-    memory.set(key, { n: value, resetAt: Date.now() + ttlSec * 1000 });
+    // Memory already holds the stamp for this isolate.
   }
 }
 
