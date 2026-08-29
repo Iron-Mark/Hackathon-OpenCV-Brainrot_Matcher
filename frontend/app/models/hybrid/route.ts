@@ -101,5 +101,8 @@ export async function POST(req: Request) {
       last = err instanceof Error ? err.message : last;
     }
   }
+  if (/free tier|paid credits|top-up/i.test(last)) {
+    last = "Hybrid images need AI Gateway credits. Add credits in the Vercel AI tab, then try again.";
+  }
   return Response.json({ error: last }, { status: 502 });
 }
