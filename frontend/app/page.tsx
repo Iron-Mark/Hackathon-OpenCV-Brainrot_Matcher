@@ -1,4 +1,4 @@
-"use client";
+use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BRAINROT_CHARACTERS } from "../lib/characters";
@@ -223,19 +223,25 @@ export default function Page() {
     }
     setBusy(true);
     setError("");
-    await unlockMatchAudio();
+    setScanNote("Matching isolated foreground color + silhouette");
+    void unlockMatchAudio();
+    let winner: MatchRow | undefined;
     try {
-      setScanNote("Matching isolated foreground color + silhouette");
-      const rows = await matchBrainrot(frame, []);
+      const rows = await Promise.race([
+        matchBrainrot(frame, []),
+        new Promise<never>((_, reject) => {
+          window.setTimeout(() => reject(new Error("Match timed out. Try Analyze again.")), 12000);
+        }),
+      ]);
       setMatches(rows);
-      const winner = rows[0];
-      if (winner) {
-        setSoundPlayed(playMatchComplete(winner.character));
-      }
+      winner = rows[0];
     } catch (err) {
       setError(err instanceof Error ? err.message : "Analyze failed");
     } finally {
       setBusy(false);
+    }
+    if (winner) {
+      setSoundPlayed(playMatchComplete(winner.character));
     }
   }
 
@@ -376,9 +382,8 @@ export default function Page() {
                 data-chant={top.character.id}
                 disabled={!soundOn}
                 onClick={() => {
-                  void unlockMatchAudio().then(() => {
-                    setSoundPlayed(playMatchComplete(top.character));
-                  });
+                  void unlockMatchAudio();
+                  setSoundPlayed(playMatchComplete(top.character));
                 }}
               >
                 Replay {top.character.name}
@@ -393,7 +398,8 @@ export default function Page() {
                     type="button"
                     className="runner-play"
                     onClick={() => {
-                      void unlockMatchAudio().then(() => playMatchComplete(row.character));
+                      void unlockMatchAudio();
+                      playMatchComplete(row.character);
                     }}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -420,7 +426,8 @@ export default function Page() {
                 type="button"
                 className="roster-play"
                 onClick={() => {
-                  void unlockMatchAudio().then(() => playMatchComplete(character));
+                  void unlockMatchAudio();
+                  playMatchComplete(character);
                 }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
