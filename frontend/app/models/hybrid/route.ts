@@ -1,4 +1,5 @@
 import { generateText } from "ai";
+import { guardAi, guardJson } from "../../../lib/ai-guard";
 import { BRAINROT_CHARACTERS } from "../../../lib/characters";
 import { CHARACTER_LOOKS } from "../../../lib/character-looks";
 
@@ -52,12 +53,19 @@ Rules:
 export async function POST(req: Request) {
   let image = "";
   let id = "";
+  let ticket = "";
   try {
-    const body = (await req.json()) as { image?: string; id?: string };
+    const body = (await req.json()) as { image?: string; id?: string; ticket?: string };
     image = (body.image ?? "").replace(/^data:image\/\w+;base64,/, "");
     id = String(body.id ?? "").trim();
+    ticket = String(body.ticket ?? "").trim();
   } catch {
     return Response.json({ error: "Invalid body" }, { status: 400 });
+  }
+
+  const denied = await guardAi(req, ticket, "hybrid");
+  if (!denied.ok) {
+    return guardJson(denied);
   }
 
   const character = BRAINROT_CHARACTERS.find((item) => item.id === id);

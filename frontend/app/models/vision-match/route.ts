@@ -1,4 +1,5 @@
 import { generateText } from "ai";
+import { guardAi, guardJson } from "../../../lib/ai-guard";
 import { ROSTER_IDS, rosterForVision } from "../../../lib/character-looks";
 
 export const maxDuration = 20;
@@ -115,12 +116,20 @@ async function askModel(model: string, bytes: Uint8Array): Promise<VisionMatch> 
 
 export async function POST(req: Request) {
   let image = "";
+  let ticket = "";
   try {
-    const body = (await req.json()) as { image?: string };
+    const body = (await req.json()) as { image?: string; ticket?: string };
     image = (body.image ?? "").replace(/^data:image\/\w+;base64,/, "");
+    ticket = String(body.ticket ?? "").trim();
   } catch {
     return Response.json({ error: "Invalid body" }, { status: 400 });
   }
+
+  const denied = await guardAi(req, ticket, "vision");
+  if (!denied.ok) {
+    return guardJson(denied);
+  }
+
   if (image.length < 80 || image.length > 1_800_000) {
     return Response.json({ error: "Image too small or too large" }, { status: 400 });
   }

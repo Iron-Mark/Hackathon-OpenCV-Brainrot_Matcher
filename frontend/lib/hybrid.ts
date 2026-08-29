@@ -1,3 +1,5 @@
+import { aiTicket } from "./ai-ticket";
+
 export type HybridResult = {
   image: string;
   id: string;
@@ -33,6 +35,7 @@ export function jpegForHybrid(imageData: ImageData, maxEdge = 768): string {
 }
 
 export async function generateHybrid(imageData: ImageData, id: string): Promise<HybridResult> {
+  const ticket = await aiTicket();
   const image = jpegForHybrid(imageData);
   const ctrl = new AbortController();
   const timer = window.setTimeout(() => ctrl.abort(), 50000);
@@ -40,7 +43,7 @@ export async function generateHybrid(imageData: ImageData, id: string): Promise<
     fetch("/models/hybrid", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ image, id }),
+      body: JSON.stringify({ image, id, ticket }),
       signal: ctrl.signal,
     }),
     timeout(50000, null),
