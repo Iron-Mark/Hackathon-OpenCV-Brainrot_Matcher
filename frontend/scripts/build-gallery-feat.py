@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Offline self-id check for the brainrot gallery (mirrors frontend still scoring)."""
+"""Download roster stills and write public/assets/gallery-feat.json."""
 
 from __future__ import annotations
 
+import io
 import json
 import math
+import time
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 from PIL import Image
@@ -14,28 +18,29 @@ H_BINS = 18
 S_BINS = 10
 GRID = 2
 PROF_BINS = 32
-ROOT = Path(__file__).resolve().parents[1] / "public/assets/brainrot"
-FEAT = Path(__file__).resolve().parents[1] / "public/assets/gallery-feat.json"
+ROOT = Path(__file__).resolve().parents[1]
+STILLS = ROOT / "public/assets/brainrot"
+OUT = ROOT / "public/assets/gallery-feat.json"
 
-IDS = [
-    "tralalero-tralala",
-    "tung-tung-tung-sahur",
-    "bombardiro-crocodilo",
-    "bombombini-gusini",
-    "brr-brr-patapim",
-    "lirili-larila",
-    "cappuccino-assassino",
-    "ballerina-cappuccina",
-    "chimpanzini-bananini",
-    "boneca-ambalabu",
-    "trippi-troppi",
-    "frigo-camelo",
-    "giraffa-celeste",
-    "udin-din-din-dun",
-    "ecco-cavallo-virtuoso",
-    "frulli-frulla",
-    "merluzzini-marraquetini",
-]
+COMMONS = {
+    "tralalero-tralala": "Tralalero Tralala.webp",
+    "tung-tung-tung-sahur": "Full image of Tung Tung Tung Sahur.png",
+    "bombardiro-crocodilo": "Bombardiro Crocodillo.jpg",
+    "bombombini-gusini": "Bombini Gusini.webp",
+    "brr-brr-patapim": "Brr brr patapim.jpg",
+    "lirili-larila": "Lirilì Larilà.webp",
+    "cappuccino-assassino": "Cappucino assasino.webp",
+    "ballerina-cappuccina": "Ballerina Cappuccina.png",
+    "chimpanzini-bananini": "ChimpanziniBananini.webp",
+    "boneca-ambalabu": "Boneca Ambalabu.jpg",
+    "trippi-troppi": "Trippi Troppi Italian brainrot.png",
+    "frigo-camelo": "Frigo Camelo.png",
+    "giraffa-celeste": "Giraffa Celeste.jpg",
+    "udin-din-din-dun": "Udin din din din dun.jpg",
+    "ecco-cavallo-virtuoso": "Ecco Cavallo Virtuoso.webp",
+    "frulli-frulla": "Frulli Frulla.jpg",
+    "merluzzini-marraquetini": "Merluzzini Marraquetini.png",
+}
 
 
 def rgb_to_hsv(r: float, g: float, b: float) -> tuple[float, float, float]:
@@ -62,10 +67,26 @@ def near_white(r: float, g: float, b: float, sat: float) -> bool:
     return r > 232 and g > 232 and b > 232 and sat < 0.14
 
 
-def load_pixels(path: Path) -> tuple[list[tuple[int, int, int]], int, int]:
-    im = Image.open(path).convert("RGB")
-    w, h = im.size
-    return list(im.getdata()), w, h
+def download(cid: str, name: str) -> Path:
+    STILLS.mkdir(parents=True, exist_ok=True)
+    dest = STILLS / f"{cid}.jpg"
+    if dest.exists() and dest.stat().st_size > 1000:
+        return dest
+    url = "https://commons.wikimedia.org/wiki/Special:FilePath/" + urllib.parse.quote(name) + "?width=256"
+    last_err: Exception | None = None
+    for attempt in range(6):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "opencv-cloud-gallery/0.1 (eval; +https://opencv-cloud.vercel.app)"})
+            with urllib.request.urlopen(req, timeout=30) as res:
+                data = res.read()
+            im = Image.open(io.BytesIO(data)).convert("RGB")
+            im.thumbnail((256, 256))
+            im.save(dest, "JPEG", quality=86)
+            return dest
+        except Exception as err:
+            last_err = err
+            time.sleep(2 ** attempt)
+    raise RuntimeError(f"download failed {cid}: {last_err}")
 
 
 def corner_mean(pix, w, h):
@@ -104,13 +125,6 @@ def fg_crop(pix, w, h):
     y1 = min(h, max(ys) + pad + 1)
     cropped = [pix[y * w + x] for y in range(y0, y1) for x in range(x0, x1)]
     return cropped, x1 - x0, y1 - y0, (x1 - x0) / max(1, y1 - y0)
-
-
-def resize(pix, w, h):
-    im = Image.new("RGB", (w, h))
-    im.putdata(pix)
-    im = im.resize((SIZE, SIZE), Image.Resampling.BILINEAR)
-    return list(im.getdata())
 
 
 def dct1(vec: list[float]) -> list[float]:
@@ -152,10 +166,15 @@ def phash(small):
     return bits
 
 
-def extract(path: Path):
-    pix, w, h = load_pixels(path)
+def extract(path: Path) -> dict:
+    im = Image.open(path).convert("RGB")
+    w, h = im.size
+    pix = list(im.getdata())
     cropped, cw, ch, aspect = fg_crop(pix, w, h)
-    small = resize(cropped, cw, ch)
+    small_im = Image.new("RGB", (cw, ch))
+    small_im.putdata(cropped)
+    small_im = small_im.resize((SIZE, SIZE), Image.Resampling.BILINEAR)
+    small = list(small_im.getdata())
     hist = [0.0] * (H_BINS * S_BINS)
     spatial = [0.0] * (GRID * GRID * H_BINS * S_BINS)
     hprof = [0.0] * PROF_BINS
@@ -194,7 +213,11 @@ def extract(path: Path):
         rs += (pr - r) ** 2
         gs += (pg - g) ** 2
         bs += (pb - b) ** 2
-    color = [r, g, b, math.sqrt(rs / n), math.sqrt(gs / n), math.sqrt(bs / n), hh / n, ss / n, vv / n]
+
+    def norm(vec):
+        ssum = sum(vec) or 1.0
+        return [v / ssum for v in vec]
+
     for y in range(SIZE):
         for x in range(1, SIZE):
             i = y * SIZE + x
@@ -202,93 +225,28 @@ def extract(path: Path):
             g1 = small[i][0] * 0.3 + small[i][1] * 0.59 + small[i][2] * 0.11
             g0 = small[j][0] * 0.3 + small[j][1] * 0.59 + small[j][2] * 0.11
             edges[min(PROF_BINS - 1, int(y / SIZE * PROF_BINS))] += abs(g1 - g0)
-
-    def norm(vec):
-        ssum = sum(vec) or 1.0
-        return [v / ssum for v in vec]
-
-    return (norm(hist), norm(spatial), color, norm(hprof), norm(vprof), norm(edges), aspect, phash(small))
-
-
-def inter(a, b):
-    return sum(min(x, y) for x, y in zip(a, b))
-
-
-def chi2(a, b):
-    acc = 0.0
-    for x, y in zip(a, b):
-        s = x + y
-        if s > 1e-9:
-            acc += (x - y) ** 2 / s
-    return math.exp(-0.5 * acc)
-
-
-def hamming(a, b):
-    x = a ^ b
-    n = 0
-    while x:
-        x &= x - 1
-        n += 1
-    return n
-
-
-def still(a, b):
-    hash_s = max(0.0, 1 - hamming(a[7], b[7]) / 64)
-    lab = chi2(a[0], b[0])
-    sil = 0.5 * max(0.0, inter(a[3], b[3])) + 0.5 * max(0.0, inter(a[4], b[4]))
-    return 0.4 * hash_s + 0.25 * lab + 0.2 * sil + 0.15 * 0.0
-
-
-def to_percent(raw, best, second, winner):
-    absv = max(0.0, min(1.0, (raw - 0.16) / 0.82))
-    gap = best - second
-    pct = 100 * (0.42 * absv + 0.58 * (raw / best if best else 0))
-    if winner:
-        pct = min(94, pct + 5 * min(1.0, gap / 0.12) * absv)
-    return max(0, min(94, round(pct)))
-
-
-def from_json():
-    if not FEAT.exists():
-        return None
-    body = json.loads(FEAT.read_text())
-    feats = {}
-    for item in body.get("items", []):
-        feats[item["id"]] = (
-            item["hist"],
-            item["spatial"],
-            item["color"],
-            item["hProf"],
-            item["vProf"],
-            item["edges"],
-            item["aspect"],
-            int(item["phash"]),
-        )
-    return feats
+    return {
+        "id": path.stem,
+        "hist": norm(hist),
+        "spatial": norm(spatial),
+        "color": [r, g, b, math.sqrt(rs / n), math.sqrt(gs / n), math.sqrt(bs / n), hh / n, ss / n, vv / n],
+        "hProf": norm(hprof),
+        "vProf": norm(vprof),
+        "edges": norm(edges),
+        "aspect": aspect,
+        "phash": str(phash(small)),
+    }
 
 
 def main() -> None:
-    feats = from_json()
-    if not feats or len(feats) < 17:
-        feats = {cid: extract(ROOT / f"{cid}.jpg") for cid in IDS}
-    misses = []
-    weak = []
-    for cid in IDS:
-        ranked = sorted(((other, still(feats[cid], feats[other])) for other in IDS), key=lambda item: item[1], reverse=True)
-        top, score = ranked[0]
-        second = ranked[1][1]
-        pct = to_percent(score, score, second, True)
-        gap = score - second
-        print(f"{cid:28} -> {top:28} {pct:3d}%  gap={gap:.3f}")
-        if top != cid:
-            misses.append(cid)
-        if pct < 80 or gap < 0.15:
-            weak.append(cid)
-    if misses:
-        raise SystemExit(f"self-id failed: {misses}")
-    print(f"self-id {len(IDS)}/{len(IDS)}")
-    if weak:
-        print("below target (80% / 0.15 gap):", ", ".join(weak))
+    items = []
+    for cid, name in COMMONS.items():
+        path = download(cid, name)
+        items.append(extract(path))
+        print("feat", cid, path.stat().st_size)
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text(json.dumps({"version": 3, "items": items}, separators=(",", ":")), encoding="utf-8")
+    print("wrote", OUT, "items", len(items))
 
 
 if __name__ == "__main__":
