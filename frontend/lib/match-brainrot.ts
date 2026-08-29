@@ -1,4 +1,6 @@
 import { BRAINROT_CHARACTERS, type BrainrotCharacter } from "./characters";
+import { CHARACTER_LOOKS } from "./character-looks";
+import { matchWithVision, type VisionMatch } from "./match-vision";
 import type { Detection } from "./types";
 
 const SIZE = 160;
@@ -13,6 +15,7 @@ export type MatchRow = {
   raw: number;
   percent: number;
   reasons: string[];
+  engine?: "look" | "still" | "vision";
 };
 
 type Feat = {
@@ -376,6 +379,92 @@ function hintBoost(character: BrainrotCharacter, detections: Detection[], frameA
   return { boost: Math.min(0.14, best), labels };
 }
 
+function isSkin(h: number, s: number, v: number): boolean {
+  if (v < 0.16 || v > 0.97 || s < 0.07 || s > 0.68) {
+    return false;
+  }
+  const deg = h * 360;
+  return deg <= 52 || deg >= 345;
+}
+
+type QueryLook = {
+  person: boolean;
+  hues: number[];
+  energy: number;
+  skinRatio: number;
+};
+
+function queryLook(imageData: ImageData): QueryLook {
+  const { data } = imageData;
+  const buckets = new Float32Array(18);
+  let skin = 0;
+  let kept = 0;
+  let sat = 0;
+  const step = Math.max(4, Math.floor(data.length / 4 / 4000) * 4);
+  for (let i = 0; i < data.length; i += step) {
+    const [h, s, v] = rgbToHsv(data[i], data[i + 1], data[i + 2]);
+    if (data[i + 3] < 16 || isNearWhite(data[i], data[i + 1], data[i + 2], s)) {
+      continue;
+    }
+    kept += 1;
+    if (isSkin(h, s, v)) {
+      skin += 1;
+      continue;
+    }
+    if (s < 0.12 || v < 0.12) {
+      continue;
+    }
+    buckets[Math.min(17, Math.floor(h * 18))] += s;
+    sat += s;
+  }
+  const skinRatio = kept ? skin / kept : 0;
+  const ranked = Array.from(buckets)
+    .map((weight, index) => ({ hue: (index + 0.5) * 20, weight }))
+    .filter((row) => row.weight > 0)
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, 3)
+    .map((row) => row.hue);
+  return {
+    person: skinRatio >= 0.14 && skinRatio <= 0.82,
+    hues: ranked,
+    energy: kept ? sat / Math.max(1, kept - skin) : 0.4,
+    skinRatio,
+  };
+}
+
+function hueDist(a: number, b: number): number {
+  const d = Math.abs(a - b) % 360;
+  return Math.min(d, 360 - d) / 180;
+}
+
+function lookScore(query: QueryLook, character: BrainrotCharacter): { score: number; why: string[] } {
+  const look = CHARACTER_LOOKS[character.id];
+  if (!look || query.hues.length === 0) {
+    return { score: 0.2, why: [] };
+  }
+  let nearest = 1;
+  let tag = look.tags[0] ?? "vibe";
+  for (const hue of query.hues) {
+    for (const target of look.hues) {
+      const dist = hueDist(hue, target);
+      if (dist < nearest) {
+        nearest = dist;
+        tag = look.tags.find((item) => ["blue", "yellow", "pink", "green", "brown", "black", "white", "orange", "red"].includes(item)) ?? tag;
+      }
+    }
+  }
+  const color = 1 - nearest;
+  const energy = 1 - Math.min(1, Math.abs(query.energy - look.sat));
+  const score = 0.78 * color + 0.22 * energy;
+  const why: string[] = [];
+  if (color >= 0.55) {
+    why.push(`${tag} tones match ${character.name}`);
+  } else if (color >= 0.35) {
+    why.push(`closest costume vibe: ${look.vibe}`);
+  }
+  return { score, why };
+}
+
 function toPercent(raw: number, best: number, second: number, isWinner: boolean): number {
   const abs = Math.max(0, Math.min(1, (raw - 0.18) / 0.78));
   const rel = best > 0 ? raw / best : 0;
@@ -457,6 +546,24 @@ export async function ensureGallery(): Promise<void> {
   gallery = await galleryPromise;
 }
 
+function applyVision(rows: MatchRow[], vision: VisionMatch, personMode: boolean): MatchRow[] {
+  const byId = new Map(vision.matches.map((row) => [row.id, row]));
+  const weight = personMode || vision.subject === "person" ? 0.74 : 0.3;
+  const next = rows.map((row) => {
+    const hit = byId.get(row.character.id);
+    if (!hit) {
+      return row;
+    }
+    const percent = Math.max(1, Math.min(99, Math.round((1 - weight) * row.percent + weight * hit.percent)));
+    const reasons = hit.reason
+      ? [hit.reason, ...row.reasons.filter((reason) => !reason.startsWith("weak vibe"))]
+      : row.reasons;
+    return { ...row, percent, reasons, engine: "vision" as const, raw: Math.max(row.raw, hit.percent / 100) };
+  });
+  next.sort((a, b) => b.percent - a.percent || b.raw - a.raw);
+  return next;
+}
+
 export async function matchBrainrot(
   imageData: ImageData,
   detections: Detection[] = [],
@@ -465,15 +572,25 @@ export async function matchBrainrot(
   if (!gallery) {
     throw new Error("Gallery failed to load");
   }
-  const subject = cropToSubject(downscaleForMatch(imageData), detections);
+  const scaled = downscaleForMatch(imageData);
+  const subject = cropToSubject(scaled, detections);
+  const look = queryLook(subject);
   const query = extract(subject);
   const frameArea = imageData.width * imageData.height;
+  const bestVisualAlone = Math.max(...gallery.map(({ feat }) => visualScore(query, feat)));
+  const stillMode = !look.person || bestVisualAlone >= 0.58;
   const rows: MatchRow[] = gallery.map(({ character, feat }) => {
-    let raw = visualScore(query, feat);
+    const visual = visualScore(query, feat);
+    const lookHit = lookScore(look, character);
     const { boost, labels } = hintBoost(character, detections, frameArea);
-    const reasons: string[] = ["foreground color + silhouette"];
+    const mix = stillMode ? 0.82 * visual + 0.18 * lookHit.score : 0.28 * visual + 0.72 * lookHit.score;
+    let raw = Math.min(0.99, mix + (boost > 0 ? boost : 0));
+    const reasons: string[] = stillMode
+      ? ["matched character colors + silhouette"]
+      : lookHit.why.length
+        ? lookHit.why
+        : ["closest costume vibe after ignoring skin"];
     if (boost > 0) {
-      raw = Math.min(0.99, raw + boost);
       reasons.push(`scan locked onto ${labels.join(", ")}`);
     }
     return {
@@ -481,6 +598,7 @@ export async function matchBrainrot(
       raw,
       percent: 0,
       reasons,
+      engine: stillMode ? "still" : "look",
     };
   });
   rows.sort((a, b) => b.raw - a.raw);
@@ -494,11 +612,16 @@ export async function matchBrainrot(
       if (gap >= 0.12 && row.percent >= 70) {
         row.reasons.unshift("strong unique look");
       } else if (gap >= 0.05) {
-        row.reasons.unshift("closest in the roster");
+        row.reasons.unshift(stillMode ? "closest character still" : "closest look in the roster");
       } else {
         row.reasons.unshift("weak vibe — closest of 17");
       }
     }
+  }
+
+  const vision = await matchWithVision(scaled);
+  if (vision) {
+    return applyVision(rows, vision, look.person || vision.subject === "person");
   }
   return rows;
 }

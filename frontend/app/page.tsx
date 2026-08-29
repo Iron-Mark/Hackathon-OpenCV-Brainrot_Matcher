@@ -223,14 +223,14 @@ export default function Page() {
     }
     setBusy(true);
     setError("");
-    setScanNote("Matching isolated foreground color + silhouette");
+    setScanNote("Matching your look, colors, and vibe to the roster");
     void unlockMatchAudio();
     let winner: MatchRow | undefined;
     try {
       const rows = await Promise.race([
         matchBrainrot(frame, []),
         new Promise<never>((_, reject) => {
-          window.setTimeout(() => reject(new Error("Match timed out. Try Analyze again.")), 12000);
+          window.setTimeout(() => reject(new Error("Match timed out. Try Analyze again.")), 18000);
         }),
       ]);
       setMatches(rows);
@@ -270,8 +270,8 @@ export default function Page() {
           <p className="kicker">brainrot-matcher</p>
           <h1>Which brainrot character is this?</h1>
           <p className="lede">
-            Point a camera or drop a photo. OpenCV isolates the subject, then Analyze scores a
-            percentage against 17 Italian / Indonesian brainrot mascots.
+            Point a camera or drop a photo. Analyze reads clothes, colors, and vibe — not just
+            pixels — then scores you against 17 Italian / Indonesian brainrot mascots.
           </p>
         </div>
         <div className={`status ${galleryReady ? "ok" : ""}`}>
