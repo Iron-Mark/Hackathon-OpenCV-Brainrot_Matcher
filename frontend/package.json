@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "next dev --port 3000",
     "build": "next build",
-    "start": "next start --port 3000"
+    "start": "next start --port 3000",
+    "eval:looks": "node scripts/test-looks.mjs",
+    "eval:match": "node scripts/eval-match.mjs",
+    "eval:self": "python3 scripts/self_match.py"
   },
   "dependencies": {
     "@vercel/functions": "^3.9.5",
