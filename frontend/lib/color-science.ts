@@ -137,10 +137,10 @@ export function phashBits(buf: PixelBuf, size = 32): bigint {
   }
   const sorted = [...coeffs].sort((a, b) => a - b);
   const mid = sorted[Math.floor(sorted.length / 2)];
-  let bits = 0n;
+  let bits = BigInt(0);
   for (let i = 0; i < 64 && i < coeffs.length; i += 1) {
     if (coeffs[i] > mid) {
-      bits |= 1n << BigInt(i);
+      bits |= BigInt(1) << BigInt(i);
     }
   }
   return bits;
@@ -178,7 +178,7 @@ export function hamming(a: bigint, b: bigint): number {
   let x = a ^ b;
   let n = 0;
   while (x) {
-    x &= x - 1n;
+    x &= x - BigInt(1);
     n += 1;
   }
   return n;
