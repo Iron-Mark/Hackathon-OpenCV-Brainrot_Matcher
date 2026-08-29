@@ -1,8 +1,12 @@
-import type { BrainrotCharacter } from "./characters";
+import { BRAINROT_CHARACTERS, type BrainrotCharacter } from "./characters";
 
 const STORAGE_KEY = "opencv-cloud-sound";
+const SILENT_WAV =
+  "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
 
 let ctx: AudioContext | null = null;
+let chantEl: HTMLAudioElement | null = null;
+let chantsPrefetched = false;
 
 export function soundEnabled(): boolean {
   if (typeof window === "undefined") {
@@ -37,137 +41,123 @@ function audio(): AudioContext | null {
   return ctx;
 }
 
-export function stopMatchAudio() {
-  window.speechSynthesis?.cancel();
+function getChantEl(): HTMLAudioElement {
+  if (!chantEl) {
+    chantEl = new Audio();
+    chantEl.preload = "auto";
+  }
+  return chantEl;
 }
 
-/** Call from a user click so autoplay policy allows the later sting. Never block Analyze. */
+export function stopMatchAudio() {
+  window.speechSynthesis?.cancel();
+  if (chantEl) {
+    chantEl.pause();
+    chantEl.currentTime = 0;
+  }
+}
+
+function timeout(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function prefetchChants() {
+  if (chantsPrefetched) {
+    return;
+  }
+  chantsPrefetched = true;
+  for (const character of BRAINROT_CHARACTERS) {
+    const link = document.createElement("link");
+    link.rel = "prefetch";
+    link.as = "audio";
+    link.href = `/models/chant/${character.id}`;
+    document.head.appendChild(link);
+  }
+}
+
+/** Call from a user tap so iOS lets the later Italian chant play. */
 export async function unlockMatchAudio(): Promise<void> {
   try {
     const ac = audio();
     if (ac?.state === "suspended") {
-      await Promise.race([
-        ac.resume(),
-        new Promise<void>((resolve) => {
-          window.setTimeout(resolve, 250);
-        }),
-      ]);
+      await Promise.race([ac.resume(), timeout(250)]);
     }
+    const el = getChantEl();
+    if (!el.src) {
+      el.src = SILENT_WAV;
+    }
+    await Promise.race([el.play().then(() => undefined).catch(() => undefined), timeout(250)]);
+    el.pause();
+    el.currentTime = 0;
+    prefetchChants();
     window.speechSynthesis?.getVoices();
   } catch {
-    /* Audio is optional — a hung or blocked resume must not freeze Analyze. */
+    /* Audio is optional — a hung resume must not freeze Analyze. */
   }
-}
-
-function tone(
-  ac: AudioContext,
-  freq: number,
-  start: number,
-  dur: number,
-  type: OscillatorType,
-  gain: number,
-) {
-  const osc = ac.createOscillator();
-  const g = ac.createGain();
-  osc.type = type;
-  osc.frequency.value = freq;
-  g.gain.setValueAtTime(0.0001, start);
-  g.gain.exponentialRampToValueAtTime(gain, start + 0.016);
-  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
-  osc.connect(g);
-  g.connect(ac.destination);
-  osc.start(start);
-  osc.stop(start + dur + 0.02);
-}
-
-export function playCharacterSting(character: BrainrotCharacter): boolean {
-  if (!soundEnabled()) {
-    return false;
-  }
-  const ac = audio();
-  if (!ac) {
-    return false;
-  }
-  const { freqs, gap, dur, wave, gain } = character.theme;
-  const t0 = ac.currentTime + 0.02;
-  freqs.forEach((freq, index) => {
-    tone(ac, freq, t0 + index * gap, dur, wave, gain);
-  });
-  return true;
 }
 
 function listVoices(): SpeechSynthesisVoice[] {
   return window.speechSynthesis?.getVoices() ?? [];
 }
 
-function voiceScore(voice: SpeechSynthesisVoice, lang: string): number {
-  const want = lang.toLowerCase();
-  const prefix = want.slice(0, 2);
-  const vlang = voice.lang.toLowerCase();
-  const name = voice.name.toLowerCase();
-  if (vlang === want || vlang.replace("_", "-") === want) {
-    return 100;
-  }
-  if (vlang.startsWith(prefix)) {
-    return 80;
-  }
-  if (prefix === "it" && /italian|italiano/.test(name)) {
-    return 70;
-  }
-  if (prefix === "id" && /indonesia/.test(name)) {
-    return 70;
-  }
-  return 0;
-}
-
-function pickVoice(lang: string): SpeechSynthesisVoice | undefined {
-  return listVoices()
-    .map((voice) => ({ voice, score: voiceScore(voice, lang) }))
+function pickItalianVoice(): SpeechSynthesisVoice | undefined {
+  const ranked = listVoices()
+    .map((voice) => {
+      const lang = voice.lang.toLowerCase().replace("_", "-");
+      const name = voice.name.toLowerCase();
+      let score = 0;
+      if (lang === "it-it") {
+        score += 80;
+      } else if (lang.startsWith("it")) {
+        score += 60;
+      } else if (/italian|italiano/.test(name)) {
+        score += 50;
+      }
+      if (/luca|diego|giorgio|cosimo|guido|male|uomo/.test(name)) {
+        score += 20;
+      }
+      return { voice, score };
+    })
     .filter((row) => row.score > 0)
-    .sort((a, b) => b.score - a.score)[0]?.voice;
+    .sort((a, b) => b.score - a.score);
+  return ranked[0]?.voice;
 }
 
-function waitForVoices(): Promise<SpeechSynthesisVoice[]> {
-  const ready = listVoices();
-  if (ready.length > 0) {
-    return Promise.resolve(ready);
-  }
-  return new Promise((resolve) => {
-    const finish = () => resolve(listVoices());
-    window.speechSynthesis?.addEventListener("voiceschanged", finish, { once: true });
-    window.setTimeout(finish, 400);
-  });
-}
-
-export function announceCharacter(character: BrainrotCharacter) {
-  if (!soundEnabled() || typeof window === "undefined" || !window.speechSynthesis) {
+function announceItalianFallback(character: BrainrotCharacter) {
+  if (!window.speechSynthesis) {
     return;
   }
   window.speechSynthesis.cancel();
-  const delay = Math.round((character.theme.freqs.length * character.theme.gap + 0.12) * 1000);
-  window.setTimeout(() => {
-    void (async () => {
-      if (!soundEnabled()) {
-        return;
-      }
-      await waitForVoices();
-      const voice = pickVoice(character.theme.lang);
-      if (!voice) {
-        return;
-      }
-      const utter = new SpeechSynthesisUtterance(character.theme.chant);
-      utter.lang = voice.lang || character.theme.lang;
-      utter.rate = character.theme.rate;
-      utter.pitch = character.theme.pitch;
-      utter.voice = voice;
-      window.speechSynthesis.speak(utter);
-    })();
-  }, delay);
+  const utter = new SpeechSynthesisUtterance(character.theme.chant);
+  utter.lang = "it-IT";
+  utter.rate = 0.92;
+  utter.pitch = 0.82;
+  const voice = pickItalianVoice();
+  if (voice) {
+    utter.voice = voice;
+  }
+  window.speechSynthesis.speak(utter);
+}
+
+async function playItalianChant(character: BrainrotCharacter): Promise<boolean> {
+  const el = getChantEl();
+  el.src = `/models/chant/${character.id}`;
+  try {
+    await el.play();
+    return true;
+  } catch {
+    announceItalianFallback(character);
+    return false;
+  }
 }
 
 export function playMatchComplete(character: BrainrotCharacter): boolean {
+  if (!soundEnabled()) {
+    return false;
+  }
   stopMatchAudio();
-  const played = playCharacterSting(character);
-  announceCharacter(character);
-  return played;
+  void playItalianChant(character);
+  return true;
 }

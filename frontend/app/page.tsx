@@ -344,7 +344,7 @@ export default function Page() {
               }
             }}
           >
-            {soundOn ? "Sound on · character chant" : "Sound off"}
+            {soundOn ? "Sound on · Italian chant" : "Sound off"}
           </button>
           {error ? <p className="error">{error}</p> : null}
         </section>
@@ -418,7 +418,7 @@ export default function Page() {
 
       <section className="panel roster">
         <h2>Roster</h2>
-        <p className="lede">Tap a character to hear its chant.</p>
+        <p className="lede">Tap a character to hear the original Italian chant.</p>
         <ul className="roster-grid">
           {BRAINROT_CHARACTERS.map((character) => (
             <li key={character.id}>
