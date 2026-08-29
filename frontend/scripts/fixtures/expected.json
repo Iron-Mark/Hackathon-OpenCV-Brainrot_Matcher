@@ -1,0 +1,15 @@
+{
+  "notes": "Optional extra person fixtures. Each case can use query color families or RGB swatches.",
+  "cases": [
+    {
+      "name": "banana-yellow-tee",
+      "swatches": [[250, 220, 30, 4], [80, 50, 30, 1]],
+      "expect": ["chimpanzini-bananini", "udin-din-din-dun"]
+    },
+    {
+      "name": "sky-blue-dress",
+      "swatches": [[90, 180, 230, 3], [240, 220, 80, 1]],
+      "expect": ["giraffa-celeste", "tralalero-tralala"]
+    }
+  ]
+}

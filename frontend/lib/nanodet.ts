@@ -1,4 +1,5 @@
 import { COCO_CLASSES } from "./coco";
+import { cachedArrayBuffer } from "./gallery-cache";
 import type { Detection } from "./types";
 
 export const NANODET_PATH = "/models/nanodet";
@@ -95,11 +96,7 @@ export async function ensureNanoDet(): Promise<void> {
     return;
   }
   const ort = await loadOrt();
-  const res = await fetch(NANODET_PATH);
-  if (!res.ok) {
-    throw new Error("Could not download NanoDet weights");
-  }
-  const bytes = await res.arrayBuffer();
+  const bytes = await cachedArrayBuffer(NANODET_PATH);
   session = await ort.InferenceSession.create(bytes, { executionProviders: ["wasm"] });
   tensorCtor = ort.Tensor;
 }

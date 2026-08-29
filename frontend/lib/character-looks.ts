@@ -204,11 +204,11 @@ export function colorFamily(h: number, s: number, v: number): ColorFamily | null
   if (deg > 255 && deg < 300) {
     return "pink";
   }
-  if (deg >= 12 && deg < 42 && s >= 0.48 && v > 0.35) {
+  if (deg >= 12 && deg < 42 && s >= 0.58 && v > 0.48) {
     return "orange";
   }
   if (deg <= 40 || deg >= 345) {
-    if (s < 0.52 && v < 0.78) {
+    if (v < 0.82 && (s < 0.62 || v < 0.5)) {
       return "brown";
     }
     return "red";

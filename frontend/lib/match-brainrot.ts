@@ -1,5 +1,15 @@
 import { BRAINROT_CHARACTERS, type BrainrotCharacter } from "./characters";
 import { CHARACTER_LOOKS, colorFamily, familyOverlap, type ColorFamily } from "./character-looks";
+import { embedLocal, localClipScores, matchWithClip } from "./clip-match";
+import {
+  chiSquareSim,
+  dominantColors,
+  phashBits,
+  phashSim,
+  softmax,
+} from "./color-science";
+import { idbGet, idbSet } from "./gallery-cache";
+import { isolateSubject, pixelZone, type Isolation } from "./isolate";
 import { matchWithVision, type VisionMatch } from "./match-vision";
 import type { Detection } from "./types";
 
@@ -9,13 +19,19 @@ const S_BINS = 10;
 const GRID = 2;
 const PROF_BINS = 32;
 const GENERIC_HINTS = new Set(["person", "face"]);
+const GALLERY_FEAT_URL = "/assets/gallery-feat.json";
+const GALLERY_IDB = "gallery-feat-v3";
 
 export type MatchRow = {
   character: BrainrotCharacter;
   raw: number;
   percent: number;
   reasons: string[];
-  engine?: "look" | "still" | "vision";
+  engine?: "look" | "still" | "vision" | "clip";
+};
+
+export type MatchOptions = {
+  vision?: boolean;
 };
 
 type Feat = {
@@ -26,9 +42,22 @@ type Feat = {
   vProf: Float32Array;
   edges: Float32Array;
   aspect: number;
+  phash: bigint;
 };
 
-type Packed = { character: BrainrotCharacter; feat: Feat };
+type Packed = { character: BrainrotCharacter; feat: Feat; embed: number[] };
+
+type StoredFeat = {
+  id: string;
+  hist: number[];
+  spatial: number[];
+  color: number[];
+  hProf: number[];
+  vProf: number[];
+  edges: number[];
+  aspect: number;
+  phash: string;
+};
 
 let gallery: Packed[] | null = null;
 let galleryPromise: Promise<Packed[]> | null = null;
@@ -284,6 +313,7 @@ function extract(imageData: ImageData): Feat {
     vProf,
     edges,
     aspect,
+    phash: phashBits(small),
   };
 }
 
@@ -352,6 +382,14 @@ function visualScore(a: Feat, b: Feat): number {
   return 0.28 * h + 0.22 * s + 0.18 * c + 0.18 * sil + 0.1 * e + 0.04 * asp;
 }
 
+function stillScore(a: Feat, b: Feat, hint: number): number {
+  const lab = chiSquareSim(a.hist, b.hist);
+  const sil =
+    0.5 * Math.max(0, intersection(a.hProf, b.hProf)) + 0.5 * Math.max(0, intersection(a.vProf, b.vProf));
+  const hash = phashSim(a.phash, b.phash);
+  return Math.min(0.99, 0.4 * hash + 0.25 * lab + 0.2 * sil + 0.15 * hint);
+}
+
 function hintBoost(character: BrainrotCharacter, detections: Detection[], frameArea: number): { boost: number; labels: string[] } {
   let best = 0;
   const labels: string[] = [];
@@ -393,7 +431,7 @@ type QueryLook = {
   clothes: ColorFamily[];
   hair: ColorFamily[];
   energy: number;
-  skinRatio: number;
+  coverage: number;
 };
 
 function topFamilies(counts: Partial<Record<ColorFamily, number>>, limit = 3): ColorFamily[] {
@@ -404,12 +442,11 @@ function topFamilies(counts: Partial<Record<ColorFamily, number>>, limit = 3): C
     .map(([family]) => family);
 }
 
-function queryLook(imageData: ImageData): QueryLook {
+function queryLook(imageData: ImageData, isolation: Isolation): QueryLook {
   const { data, width, height } = imageData;
   const clothes: Partial<Record<ColorFamily, number>> = {};
   const hair: Partial<Record<ColorFamily, number>> = {};
   const buckets = new Float32Array(18);
-  let skin = 0;
   let kept = 0;
   let sat = 0;
   let colorful = 0;
@@ -419,20 +456,21 @@ function queryLook(imageData: ImageData): QueryLook {
     if (data[i + 3] < 16) {
       continue;
     }
-    kept += 1;
-    if (isSkin(h, s, v)) {
-      skin += 1;
+    const zone = pixelZone(i / 4, width, isolation);
+    if (zone === "bg" || zone === "face") {
       continue;
     }
-    const px = (i / 4) % width;
-    const py = Math.floor(i / 4 / width);
+    if (isSkin(h, s, v) && zone !== "hair") {
+      continue;
+    }
+    kept += 1;
     const family = colorFamily(h, s, v);
     const weight = 0.35 + s;
-    if (py < height * 0.32 && px > width * 0.18 && px < width * 0.82 && family) {
+    if (zone === "hair" && family) {
       hair[family] = (hair[family] ?? 0) + weight;
     }
-    if (py >= height * 0.28 && family) {
-      clothes[family] = (clothes[family] ?? 0) + weight * (py > height * 0.5 ? 1.25 : 1);
+    if ((zone === "clothes" || zone === "legs") && family) {
+      clothes[family] = (clothes[family] ?? 0) + weight * (zone === "legs" ? 0.85 : 1);
     }
     if (s < 0.12 || v < 0.12) {
       continue;
@@ -441,7 +479,20 @@ function queryLook(imageData: ImageData): QueryLook {
     sat += s;
     colorful += 1;
   }
-  const skinRatio = kept ? skin / kept : 0;
+  const fromKmeans = dominantColors(imageData, 3, (index) => {
+    const zone = pixelZone(index, width, isolation);
+    return zone === "clothes" || zone === "legs";
+  });
+  for (const swatch of fromKmeans) {
+    const [h, s, v] = rgbToHsv(swatch.r, swatch.g, swatch.b);
+    if (isSkin(h, s, v)) {
+      continue;
+    }
+    const family = colorFamily(h, s, v);
+    if (family) {
+      clothes[family] = (clothes[family] ?? 0) + swatch.weight * 2.2;
+    }
+  }
   const ranked = Array.from(buckets)
     .map((weight, index) => ({ hue: (index + 0.5) * 20, weight }))
     .filter((row) => row.weight > 0)
@@ -449,12 +500,12 @@ function queryLook(imageData: ImageData): QueryLook {
     .slice(0, 3)
     .map((row) => row.hue);
   return {
-    person: skinRatio >= 0.12 && skinRatio <= 0.86,
+    person: isolation.person,
     hues: ranked,
     clothes: topFamilies(clothes),
     hair: topFamilies(hair, 2),
     energy: colorful ? sat / colorful : 0.4,
-    skinRatio,
+    coverage: isolation.coverage,
   };
 }
 
@@ -469,7 +520,11 @@ function lookScore(query: QueryLook, character: BrainrotCharacter): { score: num
   const dominant = query.clothes[0];
   const mismatch =
     dominant && !look.families.includes(dominant) && !["brown", "gray", "black"].includes(dominant) ? 0.22 : 0;
-  const score = Math.max(0.04, Math.min(0.98, 0.7 * clothes + 0.16 * hair + 0.14 * energy - mismatch));
+  const zone = clothes;
+  const score = Math.max(
+    0.04,
+    Math.min(0.98, 0.7 * clothes + 0.15 * zone + 0.1 * energy + 0.05 * hair - mismatch),
+  );
   const why: string[] = [];
   if (clothes >= 0.7 && dominant) {
     why.push(`${dominant} clothes match ${character.name}`);
@@ -477,20 +532,21 @@ function lookScore(query: QueryLook, character: BrainrotCharacter): { score: num
     why.push(`closest costume vibe: ${look.vibe}`);
   }
   if (hair >= 0.7 && query.hair[0]) {
-    why.push(`${query.hair[0]} hair/top fits the look`);
+    why.push(`${query.hair[0]} crown/top fits the look`);
   }
   return { score, why };
 }
 
-function toPercent(raw: number, best: number, second: number, isWinner: boolean): number {
-  const abs = Math.max(0, Math.min(1, (raw - 0.18) / 0.78));
-  const rel = best > 0 ? raw / best : 0;
+function toPercent(prob: number, raw: number, best: number, second: number, isWinner: boolean): number {
+  const abs = Math.max(0, Math.min(1, (raw - 0.16) / 0.82));
   const gap = best - second;
-  let pct = 100 * abs ** 1.08 * (0.62 + 0.38 * rel);
+  let pct = 100 * (0.42 * abs + 0.58 * prob);
   if (isWinner) {
-    pct = Math.min(99, pct + 8 * Math.min(1, gap / 0.08) * abs);
+    pct = Math.min(94, pct + 5 * Math.min(1, gap / 0.12) * abs);
+  } else {
+    pct = Math.min(pct, 100 * prob * 0.92);
   }
-  return Math.max(0, Math.min(99, Math.round(pct)));
+  return Math.max(0, Math.min(94, Math.round(pct)));
 }
 
 function downscaleForMatch(imageData: ImageData, maxEdge = 384): ImageData {
@@ -534,26 +590,101 @@ async function imageDataFromUrl(url: string): Promise<ImageData> {
   return ctx.getImageData(0, 0, width, height);
 }
 
+function featFromStored(row: StoredFeat): Feat {
+  return {
+    hist: Float32Array.from(row.hist),
+    spatial: Float32Array.from(row.spatial),
+    color: Float32Array.from(row.color),
+    hProf: Float32Array.from(row.hProf),
+    vProf: Float32Array.from(row.vProf),
+    edges: Float32Array.from(row.edges),
+    aspect: row.aspect,
+    phash: BigInt(row.phash),
+  };
+}
+
+function storeFeat(id: string, feat: Feat): StoredFeat {
+  return {
+    id,
+    hist: Array.from(feat.hist),
+    spatial: Array.from(feat.spatial),
+    color: Array.from(feat.color),
+    hProf: Array.from(feat.hProf),
+    vProf: Array.from(feat.vProf),
+    edges: Array.from(feat.edges),
+    aspect: feat.aspect,
+    phash: feat.phash.toString(),
+  };
+}
+
+function packOf(character: BrainrotCharacter, feat: Feat): Packed {
+  const colorScale = feat.color.map((v, i) => (i < 6 ? v / 255 : v));
+  return {
+    character,
+    feat,
+    embed: embedLocal([feat.hist, feat.spatial, colorScale, feat.hProf, feat.vProf, feat.edges]),
+  };
+}
+
+async function loadStoredGallery(rows: StoredFeat[]): Promise<Packed[]> {
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const packed: Packed[] = [];
+  for (const character of BRAINROT_CHARACTERS) {
+    const stored = byId.get(character.id);
+    if (!stored) {
+      continue;
+    }
+    packed.push(packOf(character, featFromStored(stored)));
+  }
+  return packed;
+}
+
 export async function ensureGallery(): Promise<void> {
   if (gallery) {
     return;
   }
   if (!galleryPromise) {
     galleryPromise = (async () => {
-      const packed = await Promise.all(
+      const cached = await idbGet<StoredFeat[]>(GALLERY_IDB);
+      if (cached && cached.length >= 12) {
+        const packed = await loadStoredGallery(cached);
+        if (packed.length >= 12) {
+          return packed;
+        }
+      }
+      try {
+        const res = await fetch(GALLERY_FEAT_URL, { cache: "force-cache" });
+        if (res.ok) {
+          const body = (await res.json()) as { items?: StoredFeat[] };
+          if (body.items && body.items.length >= 12) {
+            const packed = await loadStoredGallery(body.items);
+            if (packed.length >= 12) {
+              await idbSet(GALLERY_IDB, body.items);
+              return packed;
+            }
+          }
+        }
+      } catch {
+        /* extract from stills */
+      }
+      const extracted = await Promise.all(
         BRAINROT_CHARACTERS.map(async (character) => {
           try {
-            return { character, feat: extract(await imageDataFromUrl(character.image)) };
+            return packOf(character, extract(await imageDataFromUrl(character.image)));
           } catch (err) {
             console.warn(`Gallery skip ${character.id}`, err);
             return null;
           }
         }),
       );
-      const ready = packed.filter((row): row is Packed => row !== null);
+      const ready = extracted.filter((row): row is Packed => row !== null);
       if (ready.length < 4) {
         throw new Error("Character gallery failed to load");
       }
+      await idbSet(
+        GALLERY_IDB,
+        ready.map((row) => storeFeat(row.character.id, row.feat)),
+      );
       return ready;
     })().catch((err: unknown) => {
       galleryPromise = null;
@@ -571,7 +702,7 @@ function applyVision(rows: MatchRow[], vision: VisionMatch, personMode: boolean)
     if (!hit) {
       return row;
     }
-    const percent = Math.max(1, Math.min(99, Math.round((1 - weight) * row.percent + weight * hit.percent)));
+    const percent = Math.max(1, Math.min(94, Math.round((1 - weight) * row.percent + weight * hit.percent)));
     const reasons = hit.reason
       ? [hit.reason, ...row.reasons.filter((reason) => !reason.startsWith("weak vibe"))]
       : row.reasons;
@@ -581,9 +712,37 @@ function applyVision(rows: MatchRow[], vision: VisionMatch, personMode: boolean)
   return next;
 }
 
+function finishPercents(rows: MatchRow[]): MatchRow[] {
+  rows.sort((a, b) => b.raw - a.raw);
+  const best = rows[0]?.raw ?? 0;
+  const second = rows[1]?.raw ?? 0;
+  const gap = best - second;
+  const probs = softmax(
+    rows.map((row) => row.raw),
+    0.16,
+  );
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i];
+    row.percent = toPercent(probs[i], row.raw, best, second, i === 0);
+    if (i === 0) {
+      if (gap < 0.045) {
+        row.reasons.unshift("Closest vibe — not a strong lock");
+      } else if (gap >= 0.12 && row.percent >= 70) {
+        row.reasons.unshift("strong unique look");
+      } else if (gap >= 0.05) {
+        row.reasons.unshift(row.engine === "still" ? "closest character still" : "closest look in the roster");
+      } else {
+        row.reasons.unshift("weak vibe — closest of 17");
+      }
+    }
+  }
+  return rows;
+}
+
 export async function matchBrainrot(
   imageData: ImageData,
   detections: Detection[] = [],
+  options: MatchOptions = {},
 ): Promise<MatchRow[]> {
   await ensureGallery();
   if (!gallery) {
@@ -591,24 +750,48 @@ export async function matchBrainrot(
   }
   const scaled = downscaleForMatch(imageData);
   const subject = cropToSubject(scaled, detections);
-  const look = queryLook(subject);
+  const isolation = await isolateSubject(subject, detections);
+  const look = queryLook(subject, isolation);
   const query = extract(subject);
+  const queryEmbed = embedLocal([
+    query.hist,
+    query.spatial,
+    query.color.map((v, i) => (i < 6 ? v / 255 : v)),
+    query.hProf,
+    query.vProf,
+    query.edges,
+  ]);
   const frameArea = imageData.width * imageData.height;
   const bestVisualAlone = Math.max(...gallery.map(({ feat }) => visualScore(query, feat)));
-  const stillMode = !look.person || bestVisualAlone >= 0.62;
+  const personMode = isolation.person && isolation.coverage >= 0.08;
+  const stillMode = !personMode || bestVisualAlone >= 0.7;
+  const localClip = localClipScores(
+    queryEmbed,
+    gallery.map((row) => ({ id: row.character.id, vec: row.embed })),
+  );
+  const clipById = new Map(localClip.map((row) => [row.id, row.score]));
   const rows: MatchRow[] = gallery.map(({ character, feat }) => {
     const visual = visualScore(query, feat);
     const lookHit = lookScore(look, character);
     const { boost, labels } = hintBoost(character, detections, frameArea);
-    const mix = stillMode ? 0.84 * visual + 0.16 * lookHit.score : 0.18 * visual + 0.82 * lookHit.score;
-    let raw = Math.min(0.99, mix + (boost > 0 ? boost : 0));
+    const hint = boost > 0 ? Math.min(1, boost / 0.14) : 0;
+    const still = stillScore(query, feat, hint);
+    const mix = stillMode
+      ? still
+      : 0.7 * lookHit.score + 0.15 * familyOverlap(look.clothes, CHARACTER_LOOKS[character.id]?.families ?? []) + 0.1 * lookHit.score + 0.05 * visual;
+    const clip = clipById.get(character.id) ?? 0.5;
+    const blended = stillMode ? 0.8 * mix + 0.2 * clip : 0.55 * mix + 0.45 * clip;
+    const raw = Math.min(0.99, blended + (stillMode ? 0 : boost > 0 ? boost * 0.35 : 0));
     const reasons: string[] = stillMode
       ? ["matched character colors + silhouette"]
       : lookHit.why.length
         ? lookHit.why
-        : ["closest costume vibe after ignoring skin"];
+        : ["closest costume vibe after ignoring skin and face"];
     if (boost > 0) {
       reasons.push(`scan locked onto ${labels.join(", ")}`);
+    }
+    if (!stillMode && isolation.coverage >= 0.12) {
+      reasons.push("sampled torso / crown / legs, not the whole frame");
     }
     return {
       character,
@@ -618,27 +801,43 @@ export async function matchBrainrot(
       engine: stillMode ? "still" : "look",
     };
   });
-  rows.sort((a, b) => b.raw - a.raw);
-  const best = rows[0]?.raw ?? 0;
-  const second = rows[1]?.raw ?? 0;
-  const gap = best - second;
-  for (let i = 0; i < rows.length; i += 1) {
-    const row = rows[i];
-    row.percent = toPercent(row.raw, best, second, i === 0);
-    if (i === 0) {
-      if (gap >= 0.12 && row.percent >= 70) {
-        row.reasons.unshift("strong unique look");
-      } else if (gap >= 0.05) {
-        row.reasons.unshift(stillMode ? "closest character still" : "closest look in the roster");
-      } else {
-        row.reasons.unshift("weak vibe — closest of 17");
+
+  const remoteClip = await Promise.race([
+    matchWithClip(subject),
+    new Promise<null>((resolve) => {
+      window.setTimeout(() => resolve(null), 1800);
+    }),
+  ]);
+  if (remoteClip?.length) {
+    const weight = stillMode ? 0.22 : 0.45;
+    const byId = new Map(remoteClip.map((row) => [row.id, row.score]));
+    for (const row of rows) {
+      const hit = byId.get(row.character.id);
+      if (hit == null) {
+        continue;
+      }
+      row.raw = Math.min(0.99, (1 - weight) * row.raw + weight * hit);
+      row.engine = "clip";
+      if (!row.reasons.some((reason) => reason.includes("on-device CLIP"))) {
+        row.reasons.push("on-device CLIP agreed");
       }
     }
   }
 
-  const vision = await matchWithVision(scaled);
-  if (vision) {
-    return applyVision(rows, vision, look.person || vision.subject === "person");
+  const finished = finishPercents(rows);
+  if (options.vision) {
+    const vision = await matchWithVision(scaled);
+    if (vision) {
+      return applyVision(finished, vision, personMode || vision.subject === "person");
+    }
   }
-  return rows;
+  return finished;
+}
+
+export async function rerankWithVision(imageData: ImageData, rows: MatchRow[]): Promise<MatchRow[]> {
+  const vision = await matchWithVision(downscaleForMatch(imageData));
+  if (!vision) {
+    throw new Error("AI rerank is unavailable right now");
+  }
+  return applyVision(rows, vision, vision.subject === "person");
 }
