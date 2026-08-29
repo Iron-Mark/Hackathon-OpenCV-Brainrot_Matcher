@@ -230,7 +230,7 @@ export default function Page() {
       const rows = await Promise.race([
         matchBrainrot(frame, []),
         new Promise<never>((_, reject) => {
-          window.setTimeout(() => reject(new Error("Match timed out. Try Analyze again.")), 18000);
+          window.setTimeout(() => reject(new Error("Match timed out. Try Analyze again.")), 22000);
         }),
       ]);
       setMatches(rows);
@@ -270,8 +270,8 @@ export default function Page() {
           <p className="kicker">brainrot-matcher</p>
           <h1>Which brainrot character is this?</h1>
           <p className="lede">
-            Point a camera or drop a photo. Analyze reads clothes, colors, and vibe — not just
-            pixels — then scores you against 17 Italian / Indonesian brainrot mascots.
+            Point a camera or drop a photo. Analyze matches clothes, hair, and vibe to the
+            costume — not your face — then scores you against 17 Italian / Indonesian brainrot mascots.
           </p>
         </div>
         <div className={`status ${galleryReady ? "ok" : ""}`}>
