@@ -44,7 +44,7 @@ export const CHARACTER_LOOKS: Record<string, CharacterLook> = {
     families: ["green", "gray"],
     hair: ["green"],
     sat: 0.45,
-    tags: ["green", "aerial", "chaotic", "loud"],
+    tags: ["green", "aerial", "chaotic", "dark"],
     vibe: "olive green crocodile, aircraft gray, aerial chaos",
   },
   "bombombini-gusini": {
