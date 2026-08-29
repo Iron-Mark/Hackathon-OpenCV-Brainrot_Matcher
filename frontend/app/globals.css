@@ -198,6 +198,43 @@ label.file:hover {
   cursor: not-allowed;
 }
 
+.match-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.match-actions .replay {
+  margin-top: 0;
+}
+
+.replay.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+
+.hybrid {
+  margin-top: 18px;
+}
+
+.hybrid img {
+  display: block;
+  width: min(100%, 420px);
+  aspect-ratio: 1;
+  object-fit: cover;
+  background: #08090c;
+  border: 1px solid var(--line);
+}
+
+.download {
+  display: inline-block;
+  margin-top: 10px;
+  color: var(--accent);
+  font-size: 13px;
+}
+
 .runner-play,
 .roster-play {
   display: flex;

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BRAINROT_CHARACTERS } from "../lib/characters";
+import { generateHybrid } from "../lib/hybrid";
 import { ensureGallery, matchBrainrot, type MatchRow } from "../lib/match-brainrot";
 import {
   playMatchComplete,
@@ -40,6 +41,10 @@ export default function Page() {
   const [scanNote, setScanNote] = useState("");
   const [soundOn, setSoundOn] = useState(true);
   const [soundPlayed, setSoundPlayed] = useState(false);
+  const [hybridUrl, setHybridUrl] = useState("");
+  const [hybridName, setHybridName] = useState("");
+  const [hybridBusy, setHybridBusy] = useState(false);
+  const [hybridError, setHybridError] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scratchRef = useRef<HTMLCanvasElement | null>(null);
@@ -164,6 +169,9 @@ export default function Page() {
   async function startCamera() {
     setError("");
     setMatches(null);
+    setHybridUrl("");
+    setHybridName("");
+    setHybridError("");
     stillRef.current = null;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -192,6 +200,9 @@ export default function Page() {
     }
     stopCamera();
     setMatches(null);
+    setHybridUrl("");
+    setHybridName("");
+    setHybridError("");
     setError("");
     setFileLabel(next.name);
     try {
@@ -223,6 +234,9 @@ export default function Page() {
     }
     setBusy(true);
     setError("");
+    setHybridUrl("");
+    setHybridName("");
+    setHybridError("");
     setScanNote("Matching your look, colors, and vibe to the roster");
     void unlockMatchAudio();
     let winner: MatchRow | undefined;
@@ -242,6 +256,25 @@ export default function Page() {
     }
     if (winner) {
       setSoundPlayed(playMatchComplete(winner.character));
+    }
+  }
+
+  async function makeHybrid(id: string) {
+    const frame = stillRef.current;
+    if (!frame) {
+      setHybridError("Start the camera or upload a photo first.");
+      return;
+    }
+    setHybridBusy(true);
+    setHybridError("");
+    try {
+      const result = await generateHybrid(frame, id);
+      setHybridUrl(result.image);
+      setHybridName(result.name);
+    } catch (err) {
+      setHybridError(err instanceof Error ? err.message : "Hybrid image failed");
+    } finally {
+      setHybridBusy(false);
     }
   }
 
@@ -271,7 +304,7 @@ export default function Page() {
           <h1>Which brainrot character is this?</h1>
           <p className="lede">
             Point a camera or drop a photo. Analyze matches clothes, hair, and vibe to the
-            costume — not your face — then scores you against 17 Italian / Indonesian brainrot mascots.
+            costume — not your face — then you can brew a hybrid image of you as that mascot.
           </p>
         </div>
         <div className={`status ${galleryReady ? "ok" : ""}`}>
@@ -376,18 +409,28 @@ export default function Page() {
                 ))}
               </p>
               {scanNote ? <p className="meta">{scanNote}</p> : null}
-              <button
-                className="replay"
-                type="button"
-                data-chant={top.character.id}
-                disabled={!soundOn}
-                onClick={() => {
-                  void unlockMatchAudio();
-                  setSoundPlayed(playMatchComplete(top.character));
-                }}
-              >
-                Replay {top.character.name}
-              </button>
+              <div className="match-actions">
+                <button
+                  className="replay"
+                  type="button"
+                  data-chant={top.character.id}
+                  disabled={!soundOn}
+                  onClick={() => {
+                    void unlockMatchAudio();
+                    setSoundPlayed(playMatchComplete(top.character));
+                  }}
+                >
+                  Replay {top.character.name}
+                </button>
+                <button
+                  className="replay secondary"
+                  type="button"
+                  disabled={hybridBusy || !hasFrame}
+                  onClick={() => void makeHybrid(top.character.id)}
+                >
+                  {hybridBusy ? "Brewing hybrid…" : `Generate hybrid · ${top.character.name}`}
+                </button>
+              </div>
             </div>
           </div>
           {rest && rest.length > 0 ? (
@@ -412,6 +455,17 @@ export default function Page() {
                 </li>
               ))}
             </ol>
+          ) : null}
+          {hybridError ? <p className="error">{hybridError}</p> : null}
+          {hybridUrl ? (
+            <div className="hybrid">
+              <p className="kicker">Hybrid · you as {hybridName}</p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={hybridUrl} alt={`${hybridName} hybrid`} />
+              <a className="download" href={hybridUrl} download={`${hybridName || "brainrot"}-hybrid.png`}>
+                Download hybrid
+              </a>
+            </div>
           ) : null}
         </section>
       ) : null}
