@@ -1,4 +1,3 @@
-import { drawDetections, ensureNanoDet, inferNanoDet } from "./nanodet";
 import type { Detection, PipelineId } from "./types";
 
 export type { Detection, PipelineId };
@@ -7,275 +6,131 @@ export const YUNET_PATH = "/models/yunet";
 export const OPENCV_JS_SRC =
   "https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js";
 
-export type CvRuntime = {
-  Mat: new () => { delete: () => void; cols: number; rows: number; data: Uint8Array };
-  Size: new (w: number, h: number) => unknown;
-  Point: new (x: number, y: number) => unknown;
-  Scalar: new (a: number, b: number, c: number, d?: number) => unknown;
-  FaceDetectorYN: new (
-    model: string,
-    config: string,
-    size: unknown,
-    score: number,
-    nms: number,
-    topK: number,
-  ) => {
-    setInputSize: (size: unknown) => void;
-    detect: (src: unknown, faces?: unknown) => unknown;
-  };
-  matFromImageData: (data: ImageData) => {
-    delete: () => void;
-    cols: number;
-    rows: number;
-    data: Uint8Array;
-  };
-  cvtColor: (src: unknown, dst: unknown, code: number) => void;
-  Canny: (src: unknown, dst: unknown, a: number, b: number) => void;
-  GaussianBlur: (src: unknown, dst: unknown, ksize: unknown, sigma: number) => void;
-  rectangle: (img: unknown, p1: unknown, p2: unknown, color: unknown, thickness: number) => void;
-  COLOR_RGBA2GRAY: number;
-  COLOR_GRAY2RGBA: number;
-  COLOR_RGBA2BGR: number;
-  COLOR_BGR2RGBA: number;
-  FS: { writeFile: (path: string, data: Uint8Array) => void };
-};
+const MAX_STILL = 640;
 
-declare global {
-  interface Window {
-    cv?: CvRuntime & { onRuntimeInitialized?: () => void; then?: Promise<CvRuntime>["then"] };
+let worker: Worker | null = null;
+let ready = false;
+let loadPromise: Promise<void> | null = null;
+let nextId = 1;
+const pending = new Map<
+  number,
+  {
+    resolve: (value: { imageData: ImageData; detections: Detection[]; elapsedMs: number; model: string }) => void;
+    reject: (err: Error) => void;
   }
-}
+>();
 
-let loadPromise: Promise<CvRuntime> | null = null;
-let detector: InstanceType<CvRuntime["FaceDetectorYN"]> | null = null;
-
-async function unwrapCv(raw: unknown): Promise<CvRuntime> {
-  let cv = raw as CvRuntime & { then?: Promise<CvRuntime>["then"]; onRuntimeInitialized?: () => void };
-  if (cv && typeof cv.then === "function" && !cv.Mat) {
-    cv = (await Promise.resolve(cv as unknown)) as CvRuntime & { onRuntimeInitialized?: () => void };
+function onWorkerMessage(event: MessageEvent) {
+  const msg = event.data || {};
+  if (msg.type === "ready") {
+    ready = true;
+    return;
   }
-  if (cv?.Mat) {
-    return cv as CvRuntime;
+  const wait = pending.get(msg.id);
+  if (!wait) {
+    return;
   }
-  return new Promise((resolve, reject) => {
-    if (!cv) {
-      reject(new Error("OpenCV.js loaded without cv"));
-      return;
-    }
-    const timer = window.setTimeout(() => reject(new Error("OpenCV.js runtime timed out")), 30000);
-    cv.onRuntimeInitialized = () => {
-      window.clearTimeout(timer);
-      resolve((window.cv as CvRuntime) ?? (cv as CvRuntime));
-    };
+  pending.delete(msg.id);
+  if (msg.type === "error") {
+    wait.reject(new Error(msg.message || "OpenCV worker failed"));
+    return;
+  }
+  const data = new Uint8ClampedArray(msg.buffer);
+  wait.resolve({
+    imageData: new ImageData(data, msg.width, msg.height),
+    detections: msg.detections ?? [],
+    elapsedMs: msg.elapsedMs ?? 0,
+    model: msg.model ?? "opencv.js",
   });
 }
 
-export function loadOpenCv(): Promise<CvRuntime> {
+export function isOpenCvReady(): boolean {
+  return ready;
+}
+
+/** Compile OpenCV.js in a worker. Does not block the UI thread. */
+export function preloadOpenCv(): Promise<void> {
   if (typeof window === "undefined") {
     return Promise.reject(new Error("OpenCV.js runs in the browser"));
   }
-  if (window.cv && "Mat" in window.cv && window.cv.Mat) {
-    return Promise.resolve(window.cv as CvRuntime);
+  if (ready) {
+    return Promise.resolve();
   }
   if (loadPromise) {
     return loadPromise;
   }
   loadPromise = new Promise((resolve, reject) => {
-    const finish = () => {
-      void unwrapCv(window.cv).then((cv) => {
-        window.cv = cv;
-        resolve(cv);
-      }, reject);
-    };
-    if (document.querySelector("script[data-opencv-js]")) {
-      finish();
-      return;
+    try {
+      worker = new Worker("/opencv-worker.js");
+      worker.onmessage = (event) => {
+        if (event.data?.type === "ready") {
+          ready = true;
+          resolve();
+        }
+        onWorkerMessage(event);
+      };
+      worker.onerror = () => {
+        loadPromise = null;
+        worker = null;
+        reject(new Error("Failed to load OpenCV worker"));
+      };
+      worker.postMessage({ type: "init" });
+    } catch (err) {
+      loadPromise = null;
+      reject(err instanceof Error ? err : new Error("Failed to start OpenCV worker"));
     }
-    const script = document.createElement("script");
-    script.src = OPENCV_JS_SRC;
-    script.async = true;
-    script.dataset.opencvJs = "true";
-    script.onload = finish;
-    script.onerror = () => reject(new Error("Failed to load OpenCV.js"));
-    document.head.appendChild(script);
   });
   return loadPromise;
 }
 
-export async function ensureYuNet(cv: CvRuntime): Promise<void> {
-  if (detector) {
-    return;
-  }
-  const res = await fetch(YUNET_PATH);
-  if (!res.ok) {
-    throw new Error("Could not download YuNet weights");
-  }
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  cv.FS.writeFile("/yunet.onnx", bytes);
-  detector = new cv.FaceDetectorYN("/yunet.onnx", "", new cv.Size(320, 320), 0.7, 0.3, 5000);
-}
-
-function faceValue(faces: { floatAt?: (i: number, j: number) => number; data32F?: Float32Array; cols: number }, row: number, col: number) {
-  if (faces.floatAt) {
-    return faces.floatAt(row, col);
-  }
-  if (faces.data32F) {
-    return faces.data32F[row * faces.cols + col];
-  }
-  return 0;
-}
-
-function readFaces(faces: { rows?: number; cols: number; floatAt?: (i: number, j: number) => number; data32F?: Float32Array } | null): Detection[] {
-  if (!faces?.rows) {
-    return [];
-  }
-  const detections: Detection[] = [];
-  for (let i = 0; i < faces.rows; i += 1) {
-    detections.push({
-      label: "face",
-      score: faceValue(faces, i, 14),
-      box: {
-        x: faceValue(faces, i, 0),
-        y: faceValue(faces, i, 1),
-        w: faceValue(faces, i, 2),
-        h: faceValue(faces, i, 3),
-      },
-    });
-  }
-  return detections;
-}
-
-export function detectYuNetFaces(cv: CvRuntime, imageData: ImageData): Detection[] {
-  if (!detector) {
-    return [];
-  }
-  const src = cv.matFromImageData(imageData);
-  const bgr = new cv.Mat();
-  const facesMat = new cv.Mat();
-  try {
-    cv.cvtColor(src, bgr, cv.COLOR_RGBA2BGR);
-    detector.setInputSize(new cv.Size(bgr.cols, bgr.rows));
-    const detected = detector.detect(bgr, facesMat) as
-      | { rows?: number; cols: number; floatAt?: (i: number, j: number) => number; data32F?: Float32Array }
-      | void;
-    const faces =
-      detected && typeof detected === "object" && "rows" in detected ? detected : facesMat;
-    return readFaces(
-      faces as {
-        rows?: number;
-        cols: number;
-        floatAt?: (i: number, j: number) => number;
-        data32F?: Float32Array;
-      },
-    );
-  } finally {
-    src.delete();
-    bgr.delete();
-    facesMat.delete();
-  }
-}
-
 export async function runBrowserPipeline(
-  cv: CvRuntime,
   imageData: ImageData,
   pipeline: PipelineId,
 ): Promise<{ imageData: ImageData; detections: Detection[]; elapsedMs: number; model: string }> {
-  const started = performance.now();
   if (pipeline === "objects") {
-    await ensureNanoDet();
-    const detections = await inferNanoDet(imageData);
-    return {
-      imageData: drawDetections(imageData, detections),
-      detections,
-      elapsedMs: performance.now() - started,
-      model: "nanodet",
-    };
+    return { imageData, detections: [], elapsedMs: 0, model: "skip" };
   }
-  if (pipeline === "faces") {
-    await ensureYuNet(cv);
+  await preloadOpenCv();
+  if (!worker) {
+    throw new Error("OpenCV worker is not available");
   }
-  const result = processImageData(cv, imageData, pipeline);
-  return {
-    ...result,
-    model: pipeline === "faces" ? "yunet" : "opencv.js",
-  };
+  const id = nextId;
+  nextId += 1;
+  const copy = new Uint8ClampedArray(imageData.data);
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve, reject });
+    worker?.postMessage(
+      {
+        id,
+        type: "process",
+        pipeline,
+        width: imageData.width,
+        height: imageData.height,
+        buffer: copy.buffer,
+      },
+      [copy.buffer],
+    );
+  });
 }
 
-export function processImageData(
-  cv: CvRuntime,
-  imageData: ImageData,
-  pipeline: PipelineId,
-): { imageData: ImageData; detections: Detection[]; elapsedMs: number } {
-  if (pipeline === "objects") {
-    throw new Error("Object detection uses NanoDet in the browser");
-  }
-  const started = performance.now();
-  const src = cv.matFromImageData(imageData);
-  const out = new cv.Mat();
-  let detections: Detection[] = [];
-
-  try {
-    if (pipeline === "grayscale") {
-      const gray = new cv.Mat();
-      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-      cv.cvtColor(gray, out, cv.COLOR_GRAY2RGBA);
-      gray.delete();
-    } else if (pipeline === "edges") {
-      const gray = new cv.Mat();
-      const edges = new cv.Mat();
-      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-      cv.Canny(gray, edges, 80, 160);
-      cv.cvtColor(edges, out, cv.COLOR_GRAY2RGBA);
-      gray.delete();
-      edges.delete();
-    } else if (pipeline === "blur") {
-      cv.GaussianBlur(src, out, new cv.Size(21, 21), 0);
-    } else {
-      if (!detector) {
-        throw new Error("YuNet is not loaded");
-      }
-      const bgr = new cv.Mat();
-      cv.cvtColor(src, bgr, cv.COLOR_RGBA2BGR);
-      detector.setInputSize(new cv.Size(bgr.cols, bgr.rows));
-      const facesMat = new cv.Mat();
-      const detected = detector.detect(bgr, facesMat) as { rows?: number; cols: number; floatAt?: (i: number, j: number) => number; data32F?: Float32Array; delete?: () => void } | void;
-      const faces = detected && typeof detected === "object" && "rows" in detected ? detected : facesMat;
-      detections = readFaces(faces as { rows?: number; cols: number; floatAt?: (i: number, j: number) => number; data32F?: Float32Array });
-      const color = new cv.Scalar(66, 180, 245, 255);
-      for (const det of detections) {
-        const x = Math.round(det.box.x);
-        const y = Math.round(det.box.y);
-        const w = Math.round(det.box.w);
-        const h = Math.round(det.box.h);
-        cv.rectangle(bgr, new cv.Point(x, y), new cv.Point(x + w, y + h), color, 2);
-      }
-      cv.cvtColor(bgr, out, cv.COLOR_BGR2RGBA);
-      bgr.delete();
-      facesMat.delete();
-    }
-
-    return {
-      imageData: new ImageData(new Uint8ClampedArray(out.data), out.cols, out.rows),
-      detections,
-      elapsedMs: performance.now() - started,
-    };
-  } finally {
-    src.delete();
-    out.delete();
-  }
-}
-
-export async function fileToImageData(file: File): Promise<ImageData> {
-  const bitmap = await createImageBitmap(file);
+function drawScaled(bitmap: ImageBitmap, maxEdge: number): ImageData {
+  const scale = Math.min(1, maxEdge / bitmap.width, maxEdge / bitmap.height);
+  const width = Math.max(8, Math.round(bitmap.width * scale));
+  const height = Math.max(8, Math.round(bitmap.height * scale));
   const canvas = document.createElement("canvas");
-  canvas.width = bitmap.width;
-  canvas.height = bitmap.height;
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) {
     throw new Error("Canvas is unavailable");
   }
-  ctx.drawImage(bitmap, 0, 0);
-  return ctx.getImageData(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  return ctx.getImageData(0, 0, width, height);
+}
+
+export async function fileToImageData(file: File): Promise<ImageData> {
+  const bitmap = await createImageBitmap(file);
+  return drawScaled(bitmap, MAX_STILL);
 }
 
 export function imageDataToUrl(imageData: ImageData): string {

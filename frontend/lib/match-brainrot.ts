@@ -394,15 +394,19 @@ async function imageDataFromUrl(url: string): Promise<ImageData> {
   }
   const blob = await res.blob();
   const bitmap = await createImageBitmap(blob);
+  const maxEdge = 384;
+  const scale = Math.min(1, maxEdge / bitmap.width, maxEdge / bitmap.height);
+  const width = Math.max(8, Math.round(bitmap.width * scale));
+  const height = Math.max(8, Math.round(bitmap.height * scale));
   const canvas = document.createElement("canvas");
-  canvas.width = bitmap.width;
-  canvas.height = bitmap.height;
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) {
     throw new Error("Canvas is unavailable");
   }
-  ctx.drawImage(bitmap, 0, 0);
-  return ctx.getImageData(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  return ctx.getImageData(0, 0, width, height);
 }
 
 export async function ensureGallery(): Promise<void> {

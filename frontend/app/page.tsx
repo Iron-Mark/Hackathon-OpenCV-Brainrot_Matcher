@@ -11,11 +11,10 @@ import {
 } from "../lib/match-sound";
 import {
   type PipelineId,
-  detectYuNetFaces,
   drawToCanvas,
-  ensureYuNet,
   fileToImageData,
-  loadOpenCv,
+  isOpenCvReady,
+  preloadOpenCv,
   runBrowserPipeline,
 } from "../lib/opencv-browser";
 
@@ -46,7 +45,7 @@ export default function Page() {
   const scratchRef = useRef<HTMLCanvasElement | null>(null);
   const stillRef = useRef<ImageData | null>(null);
   const hasFrameRef = useRef(false);
-  const cvRef = useRef<Awaited<ReturnType<typeof loadOpenCv>> | null>(null);
+  const cvReadyRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef(0);
   const lastUiRef = useRef(0);
@@ -54,34 +53,21 @@ export default function Page() {
   const scanRef = useRef(scan);
   scanRef.current = scan;
 
-  const cvLoadRef = useRef<Promise<Awaited<ReturnType<typeof loadOpenCv>> | null> | null>(null);
-
   const loadCv = useCallback(() => {
-    if (cvRef.current) {
-      return Promise.resolve(cvRef.current);
+    if (cvReadyRef.current || engine === "browser") {
+      return;
     }
-    if (!cvLoadRef.current) {
-      setEngine("loading");
-      cvLoadRef.current = (async () => {
-        try {
-          const cv = await loadOpenCv();
-          cvRef.current = cv;
-          try {
-            await ensureYuNet(cv);
-          } catch {
-            // Faces overlay is optional; matching still works.
-          }
-          setEngine("browser");
-          return cv;
-        } catch {
-          setEngine("failed");
-          cvLoadRef.current = null;
-          return null;
-        }
-      })();
-    }
-    return cvLoadRef.current;
-  }, []);
+    setEngine("loading");
+    void preloadOpenCv()
+      .then(() => {
+        cvReadyRef.current = true;
+        setEngine("browser");
+      })
+      .catch(() => {
+        cvReadyRef.current = false;
+        setEngine("failed");
+      });
+  }, [engine]);
 
   useEffect(() => {
     setSoundOn(soundEnabled());
@@ -116,7 +102,6 @@ export default function Page() {
   const loop = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    const cv = cvRef.current;
     if (!video || !canvas || video.readyState < 2) {
       rafRef.current = requestAnimationFrame(loop);
       return;
@@ -156,8 +141,8 @@ export default function Page() {
     const current = scanRef.current;
     void (async () => {
       try {
-        if (cv) {
-          const processed = await runBrowserPipeline(cv, frame, current);
+        if (isOpenCvReady() && current !== "objects") {
+          const processed = await runBrowserPipeline(frame, current);
           drawToCanvas(canvas, processed.imageData);
           const now = performance.now();
           if (now - lastUiRef.current > 200) {
@@ -193,7 +178,6 @@ export default function Page() {
       setLive(true);
       setHasFrame(false);
       hasFrameRef.current = false;
-      void loadCv();
       rafRef.current = requestAnimationFrame(loop);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Camera permission denied");
@@ -211,15 +195,14 @@ export default function Page() {
     setError("");
     setFileLabel(next.name);
     try {
-      const cv = cvRef.current;
       const input = await fileToImageData(next);
       stillRef.current = input;
       hasFrameRef.current = true;
       setHasFrame(true);
       const canvas = canvasRef.current;
-      if (canvas && cv) {
+      if (canvas && isOpenCvReady() && scanRef.current !== "objects") {
         try {
-          const processed = await runBrowserPipeline(cv, input, scanRef.current);
+          const processed = await runBrowserPipeline(input, scanRef.current);
           drawToCanvas(canvas, processed.imageData);
         } catch {
           drawToCanvas(canvas, input);
@@ -242,44 +225,8 @@ export default function Page() {
     setError("");
     await unlockMatchAudio();
     try {
-      const cv = cvRef.current;
-      let detections: { label: string; score: number; box: { x: number; y: number; w: number; h: number } }[] = [];
-      if (cv) {
-        try {
-          const scanned = await runBrowserPipeline(cv, frame, "objects");
-          detections = scanned.detections.filter((det) => det.score >= 0.28);
-          let faces: typeof detections = [];
-          try {
-            await ensureYuNet(cv);
-            faces = detectYuNetFaces(cv, frame).filter((det) => det.score >= 0.55);
-          } catch {
-            faces = [];
-          }
-          const objectBits = detections.slice(0, 4).map((d) => d.label);
-          const parts: string[] = [];
-          if (detections.length) {
-            parts.push(
-              `${detections.length} object${detections.length === 1 ? "" : "s"} (${objectBits.join(", ")})`,
-            );
-          }
-          if (faces.length) {
-            parts.push(`${faces.length} face${faces.length === 1 ? "" : "s"}`);
-          }
-          setScanNote(
-            parts.length
-              ? `OpenCV scan: ${parts.join(" · ")} — matching the subject, not the background`
-              : "OpenCV scan: no objects — matching isolated foreground color + silhouette",
-          );
-          if (!live && canvasRef.current) {
-            drawToCanvas(canvasRef.current, scanned.imageData);
-          }
-        } catch {
-          setScanNote("OpenCV object scan skipped — matching isolated foreground");
-        }
-      } else {
-        setScanNote("Matching isolated foreground color + silhouette");
-      }
-      const rows = await matchBrainrot(frame, detections);
+      setScanNote("Matching isolated foreground color + silhouette");
+      const rows = await matchBrainrot(frame, []);
       setMatches(rows);
       const winner = rows[0];
       if (winner) {
