@@ -1,24 +1,117 @@
-import { generateText, Output } from "ai";
-import { z } from "zod";
-import { rosterForVision } from "../../../lib/character-looks";
+import { generateText } from "ai";
+import { ROSTER_IDS, rosterForVision } from "../../../lib/character-looks";
 
 export const maxDuration = 20;
 
-const Schema = z.object({
-  subject: z.enum(["person", "character", "other"]),
-  matches: z
-    .array(
-      z.object({
-        id: z.string().describe("Exact roster id"),
-        percent: z.number().min(0).max(99),
-        reason: z
-          .string()
-          .describe("Short reason tied to colors, clothes, silhouette, or vibe — not identity"),
-      }),
-    )
-    .min(3)
-    .max(17),
-});
+type VisionMatch = {
+  subject: "person" | "character" | "other";
+  matches: Array<{ id: string; percent: number; reason: string }>;
+};
+
+function decodeBase64(image: string): Uint8Array {
+  return Uint8Array.from(Buffer.from(image, "base64"));
+}
+
+function extractJson(text: string): unknown {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const raw = fenced?.[1] ?? text;
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start < 0 || end <= start) {
+    throw new Error("Model did not return JSON");
+  }
+  return JSON.parse(raw.slice(start, end + 1));
+}
+
+function asSubject(value: unknown): VisionMatch["subject"] {
+  const text = String(value ?? "").toLowerCase();
+  if (text.includes("character") || text.includes("mascot")) {
+    return "character";
+  }
+  if (text.includes("person") || text.includes("selfie") || text.includes("human")) {
+    return "person";
+  }
+  return "other";
+}
+
+function asPercent(value: unknown): number {
+  const n = typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
+  if (!Number.isFinite(n)) {
+    return 0;
+  }
+  const scaled = n > 0 && n <= 1 ? n * 100 : n;
+  return Math.max(1, Math.min(99, Math.round(scaled)));
+}
+
+function asId(value: unknown): string | null {
+  const raw = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/['’]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  if (ROSTER_IDS.includes(raw)) {
+    return raw;
+  }
+  return ROSTER_IDS.find((id) => raw.includes(id) || id.includes(raw)) ?? null;
+}
+
+function sanitize(raw: unknown): VisionMatch {
+  const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const rows = Array.isArray(obj.matches) ? obj.matches : [];
+  const seen = new Set<string>();
+  const matches: VisionMatch["matches"] = [];
+  for (const row of rows) {
+    const item = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+    const id = asId(item.id ?? item.character ?? item.name);
+    if (!id || seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    matches.push({
+      id,
+      percent: asPercent(item.percent ?? item.score ?? item.confidence),
+      reason: String(item.reason ?? item.why ?? "matched clothes, colors, and vibe").slice(0, 160),
+    });
+  }
+  if (matches.length === 0) {
+    throw new Error("No roster matches in model output");
+  }
+  matches.sort((a, b) => b.percent - a.percent);
+  return { subject: asSubject(obj.subject), matches };
+}
+
+const PROMPT = `You match one photo to Italian/Indonesian brainrot mascots.
+
+Return ONLY JSON, no markdown:
+{"subject":"person"|"character"|"other","matches":[{"id":"...","percent":0-99,"reason":"..."}]}
+
+Rules:
+- subject=character if the photo already IS a roster mascot. Give that id 88-99.
+- subject=person for selfies / real people. Do NOT match facial identity or skin tone.
+  Match clothing colors, hair color, accessories, silhouette, and energy to the costume.
+- Be honest. A random selfie should not score near 90. Typical winner is 42-78.
+- Use only the exact ids below. Return 4 to 6 ranked matches.
+
+Roster:
+${rosterForVision()}`;
+
+async function askModel(model: string, bytes: Uint8Array): Promise<VisionMatch> {
+  const { text } = await generateText({
+    model,
+    temperature: 0.2,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: PROMPT },
+          { type: "file", data: bytes, mediaType: "image/jpeg" },
+        ],
+      },
+    ],
+  });
+  return sanitize(extractJson(text));
+}
 
 export async function POST(req: Request) {
   let image = "";
@@ -32,47 +125,15 @@ export async function POST(req: Request) {
     return Response.json({ error: "Image too small or too large" }, { status: 400 });
   }
 
-  try {
-    const { output } = await generateText({
-      model: "google/gemini-2.5-flash",
-      output: Output.object({
-        name: "BrainrotMatch",
-        description: "Rank brainrot characters against a photo",
-        schema: Schema,
-      }),
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: `Match this photo to the Italian / Indonesian brainrot roster.
-
-Rules:
-- If the photo is already one of the characters, identify that character with a high percent.
-- If the photo is a person or everyday scene, do NOT match facial identity. Match clothing colors, hair color, accessories, silhouette, energy, and vibe to the character costumes.
-- Be honest. A random selfie should not all score near 90. The winner can be 40-80 if the vibe is only close.
-- Use only these ids.
-
-Roster:
-${rosterForVision()}`,
-            },
-            {
-              type: "file",
-              data: image,
-              mediaType: "image/jpeg",
-            },
-          ],
-        },
-      ],
-    });
-
-    if (!output) {
-      return Response.json({ error: "No vision output" }, { status: 502 });
+  const bytes = decodeBase64(image);
+  const models = ["google/gemini-2.5-flash", "openai/gpt-4o-mini"];
+  let last = "Vision match failed";
+  for (const model of models) {
+    try {
+      return Response.json(await askModel(model, bytes));
+    } catch (err) {
+      last = err instanceof Error ? err.message : last;
     }
-    return Response.json(output);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Vision match failed";
-    return Response.json({ error: message }, { status: 502 });
   }
+  return Response.json({ error: last }, { status: 502 });
 }

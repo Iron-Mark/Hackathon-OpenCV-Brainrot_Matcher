@@ -1,5 +1,5 @@
 import { BRAINROT_CHARACTERS, type BrainrotCharacter } from "./characters";
-import { CHARACTER_LOOKS } from "./character-looks";
+import { CHARACTER_LOOKS, colorFamily, familyOverlap, type ColorFamily } from "./character-looks";
 import { matchWithVision, type VisionMatch } from "./match-vision";
 import type { Detection } from "./types";
 
@@ -390,20 +390,33 @@ function isSkin(h: number, s: number, v: number): boolean {
 type QueryLook = {
   person: boolean;
   hues: number[];
+  clothes: ColorFamily[];
+  hair: ColorFamily[];
   energy: number;
   skinRatio: number;
 };
 
+function topFamilies(counts: Partial<Record<ColorFamily, number>>, limit = 3): ColorFamily[] {
+  return (Object.entries(counts) as Array<[ColorFamily, number]>)
+    .filter(([, weight]) => weight > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([family]) => family);
+}
+
 function queryLook(imageData: ImageData): QueryLook {
-  const { data } = imageData;
+  const { data, width, height } = imageData;
+  const clothes: Partial<Record<ColorFamily, number>> = {};
+  const hair: Partial<Record<ColorFamily, number>> = {};
   const buckets = new Float32Array(18);
   let skin = 0;
   let kept = 0;
   let sat = 0;
-  const step = Math.max(4, Math.floor(data.length / 4 / 4000) * 4);
+  let colorful = 0;
+  const step = Math.max(4, Math.floor((width * height) / 5000) * 4);
   for (let i = 0; i < data.length; i += step) {
     const [h, s, v] = rgbToHsv(data[i], data[i + 1], data[i + 2]);
-    if (data[i + 3] < 16 || isNearWhite(data[i], data[i + 1], data[i + 2], s)) {
+    if (data[i + 3] < 16) {
       continue;
     }
     kept += 1;
@@ -411,11 +424,22 @@ function queryLook(imageData: ImageData): QueryLook {
       skin += 1;
       continue;
     }
+    const px = (i / 4) % width;
+    const py = Math.floor(i / 4 / width);
+    const family = colorFamily(h, s, v);
+    const weight = 0.35 + s;
+    if (py < height * 0.32 && px > width * 0.18 && px < width * 0.82 && family) {
+      hair[family] = (hair[family] ?? 0) + weight;
+    }
+    if (py >= height * 0.28 && family) {
+      clothes[family] = (clothes[family] ?? 0) + weight * (py > height * 0.5 ? 1.25 : 1);
+    }
     if (s < 0.12 || v < 0.12) {
       continue;
     }
     buckets[Math.min(17, Math.floor(h * 18))] += s;
     sat += s;
+    colorful += 1;
   }
   const skinRatio = kept ? skin / kept : 0;
   const ranked = Array.from(buckets)
@@ -425,42 +449,35 @@ function queryLook(imageData: ImageData): QueryLook {
     .slice(0, 3)
     .map((row) => row.hue);
   return {
-    person: skinRatio >= 0.14 && skinRatio <= 0.82,
+    person: skinRatio >= 0.12 && skinRatio <= 0.86,
     hues: ranked,
-    energy: kept ? sat / Math.max(1, kept - skin) : 0.4,
+    clothes: topFamilies(clothes),
+    hair: topFamilies(hair, 2),
+    energy: colorful ? sat / colorful : 0.4,
     skinRatio,
   };
 }
 
-function hueDist(a: number, b: number): number {
-  const d = Math.abs(a - b) % 360;
-  return Math.min(d, 360 - d) / 180;
-}
-
 function lookScore(query: QueryLook, character: BrainrotCharacter): { score: number; why: string[] } {
   const look = CHARACTER_LOOKS[character.id];
-  if (!look || query.hues.length === 0) {
+  if (!look) {
     return { score: 0.2, why: [] };
   }
-  let nearest = 1;
-  let tag = look.tags[0] ?? "vibe";
-  for (const hue of query.hues) {
-    for (const target of look.hues) {
-      const dist = hueDist(hue, target);
-      if (dist < nearest) {
-        nearest = dist;
-        tag = look.tags.find((item) => ["blue", "yellow", "pink", "green", "brown", "black", "white", "orange", "red"].includes(item)) ?? tag;
-      }
-    }
-  }
-  const color = 1 - nearest;
+  const clothes = familyOverlap(query.clothes, look.families);
+  const hair = familyOverlap(query.hair, look.hair.length ? look.hair : look.families);
   const energy = 1 - Math.min(1, Math.abs(query.energy - look.sat));
-  const score = 0.78 * color + 0.22 * energy;
+  const dominant = query.clothes[0];
+  const mismatch =
+    dominant && !look.families.includes(dominant) && !["brown", "gray", "black"].includes(dominant) ? 0.22 : 0;
+  const score = Math.max(0.04, Math.min(0.98, 0.7 * clothes + 0.16 * hair + 0.14 * energy - mismatch));
   const why: string[] = [];
-  if (color >= 0.55) {
-    why.push(`${tag} tones match ${character.name}`);
-  } else if (color >= 0.35) {
+  if (clothes >= 0.7 && dominant) {
+    why.push(`${dominant} clothes match ${character.name}`);
+  } else if (clothes >= 0.4) {
     why.push(`closest costume vibe: ${look.vibe}`);
+  }
+  if (hair >= 0.7 && query.hair[0]) {
+    why.push(`${query.hair[0]} hair/top fits the look`);
   }
   return { score, why };
 }
@@ -548,7 +565,7 @@ export async function ensureGallery(): Promise<void> {
 
 function applyVision(rows: MatchRow[], vision: VisionMatch, personMode: boolean): MatchRow[] {
   const byId = new Map(vision.matches.map((row) => [row.id, row]));
-  const weight = personMode || vision.subject === "person" ? 0.74 : 0.3;
+  const weight = personMode || vision.subject === "person" ? 0.82 : 0.28;
   const next = rows.map((row) => {
     const hit = byId.get(row.character.id);
     if (!hit) {
@@ -578,12 +595,12 @@ export async function matchBrainrot(
   const query = extract(subject);
   const frameArea = imageData.width * imageData.height;
   const bestVisualAlone = Math.max(...gallery.map(({ feat }) => visualScore(query, feat)));
-  const stillMode = !look.person || bestVisualAlone >= 0.58;
+  const stillMode = !look.person || bestVisualAlone >= 0.62;
   const rows: MatchRow[] = gallery.map(({ character, feat }) => {
     const visual = visualScore(query, feat);
     const lookHit = lookScore(look, character);
     const { boost, labels } = hintBoost(character, detections, frameArea);
-    const mix = stillMode ? 0.82 * visual + 0.18 * lookHit.score : 0.28 * visual + 0.72 * lookHit.score;
+    const mix = stillMode ? 0.84 * visual + 0.16 * lookHit.score : 0.18 * visual + 0.82 * lookHit.score;
     let raw = Math.min(0.99, mix + (boost > 0 ? boost : 0));
     const reasons: string[] = stillMode
       ? ["matched character colors + silhouette"]
