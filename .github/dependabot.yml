@@ -11,11 +11,10 @@ updates:
     open-pull-requests-limit: 5
     rebase-strategy: "auto"
     groups:
-      python-minor-and-patch:
+      python-patches:
         patterns:
           - "*"
         update-types:
-          - "minor"
           - "patch"
 
   - package-ecosystem: "npm"
@@ -29,11 +28,10 @@ updates:
     rebase-strategy: "auto"
     versioning-strategy: "increase-if-necessary"
     groups:
-      frontend-minor-and-patch:
+      frontend-patches:
         patterns:
           - "*"
         update-types:
-          - "minor"
           - "patch"
 
   - package-ecosystem: "github-actions"
@@ -46,9 +44,8 @@ updates:
     open-pull-requests-limit: 5
     rebase-strategy: "auto"
     groups:
-      actions-minor-and-patch:
+      actions-patches:
         patterns:
           - "*"
         update-types:
-          - "minor"
           - "patch"
