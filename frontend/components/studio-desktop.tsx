@@ -44,15 +44,17 @@ export function StudioDesktop({ api }: { api: MatcherApi }) {
         </aside>
 
         <div className="desk-stage">
-          <Stage
-            videoRef={api.videoRef}
-            canvasRef={api.canvasRef}
-            hasFrame={api.hasFrame}
-            live={api.live}
-            busy={api.busy}
-          />
-          <LowerThird api={api} />
-          <LoadMark ready={api.galleryReady} />
+          <div className="desk-crt">
+            <Stage
+              videoRef={api.videoRef}
+              canvasRef={api.canvasRef}
+              hasFrame={api.hasFrame}
+              live={api.live}
+              busy={api.busy}
+            />
+            <LowerThird api={api} />
+            <LoadMark ready={api.galleryReady} />
+          </div>
           {api.top ? (
             <div className="desk-under">
               <MatchActions api={api} />

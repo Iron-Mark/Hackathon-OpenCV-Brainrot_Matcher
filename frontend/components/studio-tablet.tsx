@@ -39,15 +39,17 @@ export function StudioTablet({ api }: { api: MatcherApi }) {
           <Shutter api={api} />
         </aside>
         <div className="tab-stage">
-          <Stage
-            videoRef={api.videoRef}
-            canvasRef={api.canvasRef}
-            hasFrame={api.hasFrame}
-            live={api.live}
-            busy={api.busy}
-          />
-          <LowerThird api={api} />
-          <LoadMark ready={api.galleryReady} />
+          <div className="tab-crt">
+            <Stage
+              videoRef={api.videoRef}
+              canvasRef={api.canvasRef}
+              hasFrame={api.hasFrame}
+              live={api.live}
+              busy={api.busy}
+            />
+            <LowerThird api={api} />
+            <LoadMark ready={api.galleryReady} />
+          </div>
           <OverlayMixer layout="pills" scan={api.scan} onPick={api.chooseScan} />
         </div>
       </div>
