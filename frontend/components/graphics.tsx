@@ -19,11 +19,11 @@ export function Sprocket() {
   );
 }
 
-export function OriginPip({ kind }: { kind: "it" | "id" }) {
+export function OriginPip({ kind, className = "origin-pip" }: { kind: "it" | "id"; className?: string }) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      className="origin-pip"
+      className={className}
       src={kind === "id" ? "/graphics/mark-id.svg" : "/graphics/mark-it.svg"}
       alt=""
     />
