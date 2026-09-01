@@ -9,7 +9,7 @@ export function ScoreDial({ percent, weak }: { percent: number; weak: boolean })
   const angle = Math.max(8, Math.min(100, percent)) * 3.6;
   return (
     <div className={`dial ${weak ? "weak" : "lock"}`} style={{ "--arc": `${angle}deg` } as never}>
-      <strong>{percent}</strong>
+      <b>{percent}</b>
       <em>%</em>
     </div>
   );
@@ -132,8 +132,8 @@ export function MatchDrawerBody({ api }: { api: MatcherApi }) {
         <img className="match-still" src={top.character.image} alt="" />
         <ScoreDial percent={top.percent} weak={api.weak} />
       </div>
-      <h2>{top.character.name}</h2>
       <span className="lock-pip" data-kind={originKind(top.character.origin)} />
+      <h2>{top.character.name}</h2>
       <MatchActions api={api} />
       <RunnerTicks api={api} />
       {api.hybridError ? <p className="err">{api.hybridError}</p> : null}

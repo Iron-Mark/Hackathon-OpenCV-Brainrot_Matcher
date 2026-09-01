@@ -357,7 +357,7 @@ img {
 .crt-idle {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
 }
 
 .crt-screen canvas.hide {
@@ -689,13 +689,13 @@ img {
   position: relative;
 }
 
-.dial strong,
+.dial b,
 .dial em {
   position: relative;
   z-index: 1;
 }
 
-.dial strong {
+.dial b {
   font-size: 26px;
   font-weight: 800;
   letter-spacing: -0.05em;
@@ -753,7 +753,7 @@ img {
   display: block;
   width: 56px;
   height: 6px;
-  margin: 0 0 14px;
+  margin: 12px 0 8px;
   background: var(--chili);
 }
 

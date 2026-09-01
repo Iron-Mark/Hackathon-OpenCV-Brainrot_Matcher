@@ -1,10 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 28" fill="none">
-  <rect width="72" height="28" fill="#1a120b"/>
-  <rect x="2" y="2" width="8" height="24" fill="#d51e2a"/>
-  <rect x="10" y="2" width="6" height="24" fill="#f0b429"/>
-  <path d="M22 7h8v3h-8zM22 18h8v3h-8z" fill="#fff6e3"/>
-  <path d="M24 10h4v8h-4z" fill="#fff6e3"/>
-  <path d="M34 7h9l-7 14h-4l2-4h-3z" fill="#f0b429"/>
-  <path d="M48 7c5 0 8 3 8 7s-3 7-8 7h-5V7z" fill="#fff6e3"/>
-  <path d="M47 10h1c2.2 0 4 1.4 4 4s-1.8 4-4 4h-1z" fill="#1a120b"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 78 28" fill="none">
+  <rect width="78" height="28" fill="#1a120b"/>
+  <rect x="2" y="2" width="6" height="24" fill="#d51e2a"/>
+  <rect x="8" y="2" width="5" height="24" fill="#f0b429"/>
+  <path d="M18 8h12v3H18zM18 17h12v3H18z" fill="#efe2bf"/>
+  <path d="M36 7h4v14h-4zM34 19h8v2h-8z" fill="#fff6e3"/>
+  <path d="M46 7h18v3H52l8 11h-5l-7-10H46z" fill="#f0b429"/>
 </svg>

@@ -2,9 +2,7 @@
   <circle cx="80" cy="80" r="74" stroke="#efe2bf" stroke-width="3" stroke-dasharray="8 7"/>
   <circle cx="80" cy="80" r="58" fill="#1a120b"/>
   <circle cx="80" cy="80" r="54" stroke="#d51e2a" stroke-width="4"/>
-  <path d="M44 58h16v8H44zM44 94h16v8H44z" fill="#fff6e3"/>
-  <path d="M48 66h8v28h-8z" fill="#fff6e3"/>
-  <path d="M68 58h20l-14 44H62l6-14H58z" fill="#f0b429"/>
-  <circle cx="108" cy="80" r="22" stroke="#fff6e3" stroke-width="6"/>
-  <path d="M80 22v12M80 126v12M22 80h12M126 80h12" stroke="#f0b429" stroke-width="3"/>
+  <path d="M48 52h10v40H48zM44 86h18v8H44z" fill="#fff6e3"/>
+  <path d="M68 52h36v10H80l16 30h-12l-12-22h-4z" fill="#f0b429"/>
+  <path d="M80 18v10M80 132v10M18 80h10M132 80h10" stroke="#f0b429" stroke-width="3"/>
 </svg>
