@@ -373,8 +373,12 @@ img {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
+}
+
+.studio-desktop .desk:has(.result) {
+  grid-template-columns: minmax(0, 1fr) 280px;
 }
 
 .studio-desktop .desk .frame {
