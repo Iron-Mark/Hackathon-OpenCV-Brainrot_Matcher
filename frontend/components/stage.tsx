@@ -21,8 +21,6 @@ export function Stage({
       <canvas ref={canvasRef} className={hasFrame ? "show" : "hide"} />
       {!hasFrame ? (
         <div className="stage-idle">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/graphics/bars.svg" alt="" />
           <i className="stage-plus" aria-hidden="true" />
         </div>
       ) : null}
