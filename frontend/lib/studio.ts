@@ -1,15 +1,15 @@
 import type { PipelineId } from "./opencv-browser";
 
-export const SCANS: { id: PipelineId; label: string; mark: string }[] = [
-  { id: "faces", label: "Face", mark: "01" },
-  { id: "objects", label: "Obj", mark: "02" },
-  { id: "edges", label: "Edge", mark: "03" },
-  { id: "grayscale", label: "Gray", mark: "04" },
-  { id: "blur", label: "Blur", mark: "05" },
+export const SCANS: { id: PipelineId; label: string }[] = [
+  { id: "faces", label: "Face" },
+  { id: "objects", label: "Things" },
+  { id: "edges", label: "Lines" },
+  { id: "grayscale", label: "Gray" },
+  { id: "blur", label: "Soft" },
 ];
 
 export type StudioViewport = "mobile" | "tablet" | "desktop";
-export type StudioDrawer = "roster" | "match" | "mixer" | "sticker" | null;
+export type StudioDrawer = "more" | "match" | "sticker" | null;
 export type StudioStep = "cam" | "scan" | "lock" | "print";
 
 export function originKind(origin: string): "it" | "id" {

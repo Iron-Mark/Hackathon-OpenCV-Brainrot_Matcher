@@ -1,80 +1,45 @@
 "use client";
 
-import type { StudioStep } from "../lib/studio";
 import type { MatcherApi } from "../lib/use-matcher";
-import { Breadcrumbs, ChannelBug, LoadMark, SoundFab, Tally, Ticker, Wordmark } from "./chrome";
-import { CamToggle, HiddenFile, Shutter, playRoster } from "./controls";
+import { StatusPip, Wordmark } from "./chrome";
+import { CameraBtn, HiddenFile, MatchBtn, MoreBtn, PhotoBtn } from "./controls";
 import { Drawer } from "./drawer";
-import { LowerThird, MatchActions, RunnerTicks, StickerReel } from "./match-board";
-import { OverlayMixer } from "./overlay-mixer";
-import { RosterStrip } from "./roster-strip";
+import { ResultBody } from "./match-board";
+import { MoreSheet } from "./more-sheet";
 import { Stage } from "./stage";
 
 export function StudioDesktop({ api }: { api: MatcherApi }) {
-  function onStep(id: StudioStep) {
-    if (id === "print") {
-      api.setDrawer(api.hybridUrl ? "sticker" : null);
-    } else {
-      api.setDrawer(null);
-    }
-  }
-
   return (
     <div className="studio studio-desktop">
-      <header className="desk-top">
+      <header className="bar">
         <Wordmark />
-        <Breadcrumbs step={api.step} onStep={onStep} />
-        <div className="desk-meta">
-          <Tally live={api.live} />
-          <ChannelBug api={api} />
-          <SoundFab api={api} />
+        <div className="actions row">
+          <CameraBtn api={api} />
+          <PhotoBtn inputId="drop-desktop" disabled={api.live} />
+          <MatchBtn api={api} />
+          <MoreBtn open={api.drawer === "more"} onClick={() => api.setDrawer(api.drawer === "more" ? null : "more")} />
         </div>
+        <StatusPip api={api} />
       </header>
 
-      <div className="desk-grid">
-        <aside className="desk-mixer">
-          <CamToggle api={api} />
-          <label className="dock-btn tall" htmlFor="drop-desktop" aria-disabled={api.live}>
-            <span className="glyph drop" aria-hidden="true" />
-            <em>DROP</em>
-          </label>
-          <HiddenFile api={api} inputId="drop-desktop" />
-          <OverlayMixer layout="rail" scan={api.scan} onPick={api.chooseScan} />
-          <Shutter api={api} />
-        </aside>
-
-        <div className="desk-stage">
-          <div className="desk-crt">
-            <Stage
-              videoRef={api.videoRef}
-              canvasRef={api.canvasRef}
-              hasFrame={api.hasFrame}
-              live={api.live}
-              busy={api.busy}
-            />
-            <LowerThird api={api} />
-            <LoadMark ready={api.galleryReady} />
-          </div>
-          {api.top ? (
-            <div className="desk-under">
-              <MatchActions api={api} />
-              <RunnerTicks api={api} />
-            </div>
-          ) : null}
+      <div className="desk">
+        <div className="frame">
+          <Stage
+            videoRef={api.videoRef}
+            canvasRef={api.canvasRef}
+            hasFrame={api.hasFrame}
+            live={api.live}
+            busy={api.busy}
+          />
         </div>
-
-        <aside className="desk-cast">
-          <span className="cast-spine">CAST</span>
-          <RosterStrip axis="y" activeId={api.top?.character.id} onPlay={playRoster} />
-        </aside>
+        {api.top ? <ResultBody api={api} /> : null}
       </div>
+      <HiddenFile api={api} inputId="drop-desktop" />
 
-      <Ticker api={api} />
       {api.error ? <p className="toast">{api.error}</p> : null}
-      {api.hybridError ? <p className="toast">{api.hybridError}</p> : null}
 
-      <Drawer open={api.drawer === "sticker"} side="right" label="Print" onClose={() => api.setDrawer(null)}>
-        <StickerReel api={api} />
+      <Drawer open={api.drawer === "more"} side="right" label="More" onClose={() => api.setDrawer(null)}>
+        <MoreSheet api={api} />
       </Drawer>
     </div>
   );

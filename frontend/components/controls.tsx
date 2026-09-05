@@ -1,17 +1,6 @@
 "use client";
 
-import { BRAINROT_CHARACTERS } from "../lib/characters";
-import { playMatchComplete, unlockMatchAudio } from "../lib/match-sound";
 import type { MatcherApi } from "../lib/use-matcher";
-
-export function playRoster(id: string) {
-  const character = BRAINROT_CHARACTERS.find((item) => item.id === id);
-  if (!character) {
-    return;
-  }
-  void unlockMatchAudio();
-  playMatchComplete(character);
-}
 
 export function HiddenFile({
   api,
@@ -32,32 +21,48 @@ export function HiddenFile({
   );
 }
 
-export function Shutter({ api }: { api: MatcherApi }) {
+export function CameraBtn({ api }: { api: MatcherApi }) {
   return (
     <button
       type="button"
-      className="shutter"
-      disabled={api.busy || !api.hasFrame || !api.galleryReady}
-      aria-label={api.busy ? "Analyzing" : "Analyze match"}
-      onClick={() => void api.analyze()}
+      className="btn"
+      data-on={api.live ? "1" : "0"}
+      aria-label={api.live ? "Stop camera" : "Open camera"}
+      aria-pressed={api.live}
+      onClick={() => (api.live ? api.stopCamera() : void api.startCamera())}
     >
-      <span />
+      {api.live ? "Stop" : "Camera"}
     </button>
   );
 }
 
-export function CamToggle({ api }: { api: MatcherApi }) {
+export function PhotoBtn({ inputId, disabled }: { inputId: string; disabled: boolean }) {
+  return (
+    <label className="btn" htmlFor={inputId} aria-disabled={disabled}>
+      Photo
+    </label>
+  );
+}
+
+export function MatchBtn({ api }: { api: MatcherApi }) {
+  const ready = api.hasFrame && api.galleryReady && !api.busy;
   return (
     <button
       type="button"
-      className="dock-btn"
-      data-on={api.live ? "1" : "0"}
-      aria-label={api.live ? "Cut camera" : "Open camera"}
-      aria-pressed={api.live}
-      onClick={() => (api.live ? api.stopCamera() : void api.startCamera())}
+      className="btn btn-go"
+      disabled={!ready}
+      aria-label={api.busy ? "Matching" : "Match"}
+      onClick={() => void api.analyze()}
     >
-      <span className="glyph cam" aria-hidden="true" />
-      <em>{api.live ? "CUT" : "CAM"}</em>
+      {api.busy ? "…" : "Match"}
+    </button>
+  );
+}
+
+export function MoreBtn({ open, onClick }: { open: boolean; onClick: () => void }) {
+  return (
+    <button type="button" className="btn" aria-label="More" aria-pressed={open} onClick={onClick}>
+      More
     </button>
   );
 }

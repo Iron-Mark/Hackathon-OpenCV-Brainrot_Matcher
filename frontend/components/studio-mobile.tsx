@@ -1,24 +1,22 @@
 "use client";
 
 import type { MatcherApi } from "../lib/use-matcher";
-import { ChannelBug, LoadMark, SoundFab, StepDots, Wordmark } from "./chrome";
-import { CamToggle, HiddenFile, Shutter, playRoster } from "./controls";
+import { StatusPip, Wordmark } from "./chrome";
+import { CameraBtn, HiddenFile, MatchBtn, MoreBtn, PhotoBtn } from "./controls";
 import { Drawer } from "./drawer";
-import { MatchDrawerBody } from "./match-board";
-import { OverlayMixer } from "./overlay-mixer";
-import { RosterStrip } from "./roster-strip";
+import { ResultBody } from "./match-board";
+import { MoreSheet } from "./more-sheet";
 import { Stage } from "./stage";
 
 export function StudioMobile({ api }: { api: MatcherApi }) {
   return (
     <div className="studio studio-mobile">
-      <header className="mob-top">
+      <header className="bar">
         <Wordmark />
-        <StepDots step={api.step} />
-        <ChannelBug api={api} />
+        <StatusPip api={api} />
       </header>
 
-      <div className="mob-stage">
+      <div className="frame">
         <Stage
           videoRef={api.videoRef}
           canvasRef={api.canvasRef}
@@ -26,59 +24,28 @@ export function StudioMobile({ api }: { api: MatcherApi }) {
           live={api.live}
           busy={api.busy}
         />
-        <LoadMark ready={api.galleryReady} />
-        <div className="mob-float">
-          <Shutter api={api} />
-        </div>
       </div>
 
-      <nav className="dock" aria-label="Studio">
-        <CamToggle api={api} />
-        <label className="dock-btn" htmlFor="drop-mobile" data-on={api.fileLabel && !api.live ? "1" : "0"} aria-disabled={api.live}>
-          <span className="glyph drop" aria-hidden="true" />
-          <em>DROP</em>
-        </label>
-        <button
-          type="button"
-          className="dock-btn"
-          aria-label="Open mixer"
-          aria-pressed={api.drawer === "mixer"}
-          data-on={api.drawer === "mixer" ? "1" : "0"}
-          onClick={() => api.setDrawer(api.drawer === "mixer" ? null : "mixer")}
-        >
-          <span className="glyph mix" aria-hidden="true" />
-          <em>{api.scan.slice(0, 4).toUpperCase()}</em>
-        </button>
-        <button
-          type="button"
-          className="dock-btn"
-          aria-label="Open cast"
-          aria-pressed={api.drawer === "roster"}
-          data-on={api.drawer === "roster" ? "1" : "0"}
-          onClick={() => api.setDrawer(api.drawer === "roster" ? null : "roster")}
-        >
-          <span className="glyph roster" aria-hidden="true" />
-          <em>CAST</em>
-        </button>
-        <SoundFab api={api} />
-      </nav>
+      <div className="actions">
+        <CameraBtn api={api} />
+        <PhotoBtn inputId="drop-mobile" disabled={api.live} />
+        <MoreBtn open={api.drawer === "more"} onClick={() => api.setDrawer(api.drawer === "more" ? null : "more")} />
+        <MatchBtn api={api} />
+      </div>
       <HiddenFile api={api} inputId="drop-mobile" />
 
       {api.error ? <p className="toast">{api.error}</p> : null}
 
-      <Drawer open={api.drawer === "roster"} side="bottom" label="Cast" onClose={() => api.setDrawer(null)}>
-        <RosterStrip axis="x" compact activeId={api.top?.character.id} onPlay={playRoster} />
-      </Drawer>
-      <Drawer open={api.drawer === "mixer"} side="bottom" label="Mixer" onClose={() => api.setDrawer(null)}>
-        <OverlayMixer layout="pads" scan={api.scan} onPick={api.chooseScan} />
+      <Drawer open={api.drawer === "more"} side="bottom" label="More" onClose={() => api.setDrawer(null)}>
+        <MoreSheet api={api} />
       </Drawer>
       <Drawer
         open={api.drawer === "match" || api.drawer === "sticker"}
         side="bottom"
-        label="Lock"
+        label="Match"
         onClose={() => api.setDrawer(null)}
       >
-        <MatchDrawerBody api={api} />
+        <ResultBody api={api} />
       </Drawer>
     </div>
   );

@@ -18,7 +18,7 @@ const mono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "ROT\u00b7TV \u2014 brainrot matcher",
-  description: "Live studio that locks a photo to Italian and Indonesian brainrot mascots. On-device. Free sticker.",
+  description: "Match a photo to an Italian or Indonesian brainrot mascot. On-device. Free sticker.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
