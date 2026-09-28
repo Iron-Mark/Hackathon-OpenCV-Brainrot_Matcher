@@ -5,6 +5,9 @@ services:
       dockerfile: infra/Dockerfile.backend
     ports:
       - "8000:8000"
+    environment:
+      BACKEND_API_TOKEN: ${BACKEND_API_TOKEN:?set BACKEND_API_TOKEN to at least 32 random characters}
+      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:3000}
     volumes:
       - backend-weights:/app/weights
 

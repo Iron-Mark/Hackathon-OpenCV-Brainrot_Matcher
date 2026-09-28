@@ -51,9 +51,14 @@ Liveness plus OpenCV and model status.
 
 `multipart/form-data`
 
+This endpoint fails closed unless `BACKEND_API_TOKEN` contains at least 32
+characters. Send it as `Authorization: Bearer <token>`. Never expose this token
+in browser JavaScript. Public deployments should also set
+`BACKEND_CORS_ORIGINS` to the exact trusted frontend origin(s); `*` is rejected.
+
 | Field | Type | Notes |
 | --- | --- | --- |
-| `file` | image | PNG, JPEG, WebP, BMP. Max 8 MB. |
+| `file` | image | PNG, JPEG, WebP, BMP. Max 8 MB compressed, 2,073,600 decoded pixels, and 4096 px per side. |
 | `pipeline` | string | One of the ids above. Default `faces`. |
 
 Response:

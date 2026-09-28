@@ -19,10 +19,13 @@ Only required if you want **YOLOX-S** on still uploads (higher accuracy than in-
 
 ```bash
 docker build -f infra/Dockerfile.backend -t opencv-cloud-api .
-docker run --rm -p 8000:8000 opencv-cloud-api
+docker run --rm -p 8000:8000 \
+  -e BACKEND_API_TOKEN='<at-least-32-random-characters>' \
+  -e BACKEND_CORS_ORIGINS='https://opencv-cloud.vercel.app' \
+  opencv-cloud-api
 ```
 
-Suggested hosts: Fly.io, Railway (Dockerfile, not Nixpacks), Cloud Run, Hugging Face Spaces (Docker). Give the container **≥ 1 GB RAM**.
+Suggested hosts: Fly.io, Railway (Dockerfile, not Nixpacks), Cloud Run, Hugging Face Spaces (Docker). Give the container **≥ 1 GB RAM**. Keep the service private when the host supports it. If it must be public, configure a strong `BACKEND_API_TOKEN`, pass it only from a trusted server, and set `BACKEND_CORS_ORIGINS` to exact origins. The process route rejects compressed uploads above 8 MB or decoded images above 2,073,600 pixels.
 
 ## Local
 

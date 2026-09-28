@@ -12,6 +12,7 @@ htmlcov/
 node_modules/
 .next/
 out/
+*.tsbuildinfo
 frontend/.env.local
 .npm/
 
