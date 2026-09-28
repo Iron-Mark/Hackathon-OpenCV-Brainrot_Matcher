@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withBotId } from "botid/next/config";
 
 const backend = (process.env.API_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
 const onVercel = process.env.VERCEL === "1";
@@ -18,4 +19,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withBotId(nextConfig);

@@ -33,6 +33,8 @@ jobs:
           node-version: "22"
       - name: Install
         run: npm ci
+      - name: Test AI guard
+        run: npm run test:ai-guard
       - name: Build
         run: npm run build
         env:
